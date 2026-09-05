@@ -1,0 +1,93 @@
+/**
+ * Servidor de archivos estáticos (JS, CSS, assets, fonts, imágenes) para el Portal Siglo 21.
+ * Sirve tanto el bundle compilado de React (Vite) como recursos estáticos tradicionales.
+ */
+
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Busca carpeta public en raíz del paquete o dist
+const PUBLIC_DIR = path.resolve(__dirname, '../../public');
+const FALLBACK_PUBLIC_DIR = path.resolve(process.cwd(), 'public');
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.map': 'application/json; charset=utf-8'
+};
+
+export function getPublicIndexPath(): string | null {
+  const primaryIndex = path.join(PUBLIC_DIR, 'index.html');
+  if (fs.existsSync(primaryIndex)) return primaryIndex;
+
+  const fallbackIndex = path.join(FALLBACK_PUBLIC_DIR, 'index.html');
+  if (fs.existsSync(fallbackIndex)) return fallbackIndex;
+
+  return null;
+}
+
+export function handleStaticRequest(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): boolean {
+  // Maneja /assets/*, /static/*, /favicon.* y archivos con extensión conocida
+  const isStaticPrefix = pathname.startsWith('/static/') || pathname.startsWith('/assets/');
+  const ext = path.extname(pathname).toLowerCase();
+  const isKnownAsset = ext in MIME_TYPES && pathname !== '/' && pathname !== '/index.html';
+
+  if (!isStaticPrefix && !isKnownAsset) {
+    return false;
+  }
+
+  let relativePath = pathname;
+  if (pathname.startsWith('/static/')) {
+    relativePath = pathname.replace('/static/', '');
+  } else if (pathname.startsWith('/assets/')) {
+    relativePath = pathname; // mantiene assets/...
+  } else {
+    relativePath = pathname.replace(/^\/+/, '');
+  }
+
+  // Prevenir Directory Traversal
+  const safePath = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, '');
+
+  let fullPath = path.join(PUBLIC_DIR, safePath);
+  if (!fs.existsSync(fullPath)) {
+    fullPath = path.join(FALLBACK_PUBLIC_DIR, safePath);
+  }
+
+  if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+    const fileExt = path.extname(fullPath).toLowerCase();
+    const contentType = MIME_TYPES[fileExt] || 'application/octet-stream';
+
+    // Caché inmutable para assets con hash de Vite
+    const cacheControl = pathname.startsWith('/assets/')
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache';
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': cacheControl
+    });
+    fs.createReadStream(fullPath).pipe(res);
+    return true;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end('Archivo estático no encontrado');
+  return true;
+}
