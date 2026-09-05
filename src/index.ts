@@ -6,7 +6,6 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { CanvasClient } from "./canvasClient.js";
-import { downloadAndExtractPdf } from "./pdfReader.js";
 import { buildQuizPrompt } from "./quizGenerator.js";
 import { startInteractiveGuideServer } from "./interactiveGuide.js";
 import { startExamSimulatorServer } from "./examSimulatorServer.js";
@@ -611,7 +610,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error("Debes proporcionar 'file_id' o 'download_url'");
         }
 
-        const extract = await downloadAndExtractPdf(downloadUrl, client.getRawToken(), maxPages);
+        const extract = await client.downloadPdf(downloadUrl, maxPages);
         return {
           content: [
             {
@@ -654,7 +653,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               dlUrl = fInfo.url || fInfo.download_url;
             }
             if (dlUrl) {
-              const extract = await downloadAndExtractPdf(dlUrl, client.getRawToken(), 15);
+              const extract = await client.downloadPdf(dlUrl, 15);
               pdfContentText = `\n\n--- Texto Extraído del PDF (${extract.numPages} págs) ---\n${extract.text}`;
             }
           } catch (e: any) {
@@ -691,7 +690,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             dlUrl = fInfo.url || fInfo.download_url;
           }
           if (dlUrl) {
-            const extract = await downloadAndExtractPdf(dlUrl, client.getRawToken(), 10);
+            const extract = await client.downloadPdf(dlUrl, 10);
             extractedText = extract.text;
           }
         }

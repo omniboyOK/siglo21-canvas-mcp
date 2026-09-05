@@ -3,7 +3,7 @@ import { URL } from "node:url";
 import { ExamRepository } from "../db/examRepository.js";
 import { TOOLS_CATALOG } from "../toolsCatalog.js";
 import { CanvasClient } from "../canvasClient.js";
-import { downloadAndExtractPdf } from "../pdfReader.js";
+import { downloadAndExtractPdf, isCanvasUrl } from "../pdfReader.js";
 
 import fs from "node:fs";
 import os from "node:os";
@@ -21,6 +21,7 @@ function resolveCanvasCredentials() {
         const parsed = JSON.parse(raw);
         if (parsed?.mcpServers?.siglo21?.env?.CANVAS_TOKEN) {
           token = parsed.mcpServers.siglo21.env.CANVAS_TOKEN;
+          console.warn("[S21 Portal] Aviso: CANVAS_TOKEN cargado desde archivo de configuración local de desarrollo.");
         }
         if (parsed?.mcpServers?.siglo21?.env?.CANVAS_URL) {
           url = parsed.mcpServers.siglo21.env.CANVAS_URL.replace(/\/+$/, "");
@@ -214,7 +215,7 @@ export async function handleApiRequest(
         title = fileInfo.display_name || fileInfo.filename || title;
         downloadUrl = fileInfo.url || fileInfo.download_url;
         if (downloadUrl) {
-          const ext = await downloadAndExtractPdf(downloadUrl, activeCanvasClient.getRawToken(), 30);
+          const ext = await activeCanvasClient.downloadPdf(downloadUrl, 30);
           extractedText = ext.text;
           numPages = ext.numPages;
         }
@@ -230,7 +231,7 @@ export async function handleApiRequest(
           downloadUrl = dlUrl || "";
           if (dlUrl) {
             try {
-              const ext = await downloadAndExtractPdf(dlUrl, activeCanvasClient.getRawToken(), 30);
+              const ext = await activeCanvasClient.downloadPdf(dlUrl, 30);
               extractedText = ext.text;
               numPages = ext.numPages;
             } catch (e: any) {
@@ -277,12 +278,20 @@ export async function handleApiRequest(
       return true;
     }
 
+    // Validar que la URL pertenece al dominio de Canvas para prevenir SSRF
+    const canvasBase = activeCanvasClient?.getBaseUrl() || CANVAS_URL;
+    if (!isCanvasUrl(targetUrl, canvasBase)) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ ok: false, error: "Solo se permiten descargas desde el dominio oficial de Canvas" }));
+      return true;
+    }
+
     try {
       const headers: Record<string, string> = {
         "User-Agent": "S21-Canvas-MCP/1.0",
       };
       if (activeCanvasClient) {
-        headers["Authorization"] = `Bearer ${activeCanvasClient.getRawToken()}`;
+        Object.assign(headers, activeCanvasClient.getAuthHeaders());
       }
 
       const response = await fetch(targetUrl, { headers });
@@ -477,12 +486,22 @@ export async function handleApiRequest(
 }
 
 function parseJsonBody(req: http.IncomingMessage): Promise<any> {
+  const MAX_BODY_SIZE = 1024 * 1024; // 1 MB límite para prevenir DoS por OOM
   return new Promise((resolve) => {
     let body = "";
+    let destroyed = false;
+
     req.on("data", (chunk) => {
+      if (destroyed) return;
       body += chunk;
+      if (body.length > MAX_BODY_SIZE) {
+        destroyed = true;
+        req.destroy(new Error("Cuerpo de solicitud excede el límite de 1MB"));
+        resolve({});
+      }
     });
     req.on("end", () => {
+      if (destroyed) return;
       const trimmed = body ? body.trim() : "";
       if (!trimmed) {
         return resolve({});
@@ -496,3 +515,4 @@ function parseJsonBody(req: http.IncomingMessage): Promise<any> {
     req.on("error", () => resolve({}));
   });
 }
+

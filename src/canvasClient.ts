@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { cleanHtmlToMarkdown } from "./htmlUtils.js";
-import { downloadAndExtractPdf } from "./pdfReader.js";
+import { downloadAndExtractPdf, isCanvasUrl } from "./pdfReader.js";
 
 export interface CanvasClientConfig {
   baseUrl: string;
@@ -105,6 +105,28 @@ export class CanvasClient {
     this.token = config.token.trim();
   }
 
+  public getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  public getAuthHeaders(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.token}`,
+      "User-Agent": "S21-Canvas-MCP/1.2",
+    };
+  }
+
+  /**
+   * Descarga y procesa un PDF asegurando que solo se adjunten credenciales a dominios oficiales de Canvas.
+   */
+  public async downloadPdf(url: string, maxPages?: number) {
+    const token = isCanvasUrl(url, this.baseUrl) ? this.token : undefined;
+    return downloadAndExtractPdf(url, token, maxPages, this.baseUrl);
+  }
+
+  /**
+   * @deprecated Utilizar downloadPdf() o getAuthHeaders() para evitar exposición innecesaria del token en memoria.
+   */
   public getRawToken(): string {
     return this.token;
   }
@@ -728,10 +750,23 @@ Entrega un informe estructurado con:
     const results: Array<{ file_path: string; filename: string; snippet: string }> = [];
     const normalizedQuery = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    let searchDir = path.resolve(baseDir);
+    const cwd = process.cwd();
+    // Sanitizar baseDir para prevenir path traversal arbitrario
+    const sanitizedBase = path.normalize(baseDir).replace(/^(\.\.[\/\\])+/, "");
+    let searchDir = path.resolve(cwd, sanitizedBase);
+
+    // Solo permitir directorios dentro de cwd o del directorio del proyecto
+    if (!searchDir.startsWith(cwd)) {
+      return {
+        query,
+        message: `Directorio '${baseDir}' fuera del ámbito permitido.`,
+        results: [],
+      };
+    }
+
     if (!fs.existsSync(searchDir)) {
-      const parentDir = path.resolve("..", baseDir);
-      if (fs.existsSync(parentDir)) {
+      const parentDir = path.resolve(cwd, "..", sanitizedBase);
+      if (fs.existsSync(parentDir) && path.basename(parentDir) === path.basename(sanitizedBase)) {
         searchDir = parentDir;
       } else {
         return {

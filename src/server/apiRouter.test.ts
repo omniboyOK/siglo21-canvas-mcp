@@ -128,7 +128,16 @@ describe("Micro-Router REST API (/api/*)", () => {
     assert.match(json.error, /url es requerido/);
   });
 
+  it("GET /api/canvas/proxy-download debe responder con 403 si la URL no es del dominio de Canvas (SSRF)", async () => {
+    const res = await fetch(`${baseUrl}/api/canvas/proxy-download?url=https://evil.com/steal-token`);
+    assert.strictEqual(res.status, 403);
+    const json = (await res.json()) as any;
+    assert.strictEqual(json.ok, false);
+    assert.match(json.error, /dominio oficial de Canvas/);
+  });
+
   it("GET /api/canvas/courses/12345/modules debe responder con respuesta estructurada JSON", async () => {
+
     const res = await fetch(`${baseUrl}/api/canvas/courses/12345/modules`);
     assert.ok([200, 500, 503].includes(res.status));
     const json = (await res.json()) as any;

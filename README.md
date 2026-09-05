@@ -1,18 +1,18 @@
-# 🎓 s21-canvas-mcp
+# s21-canvas-mcp
 
-Servidor **Model Context Protocol (MCP)** para conectar asistentes de IA (Claude Desktop, Cursor, Antigravity, Windsurf, VS Code Copilot, Codex CLI) con el entorno **Canvas LMS de la Universidad Siglo 21**.
+Servidor **Model Context Protocol (MCP)** para integrar asistentes de inteligencia artificial (Claude Desktop, Cursor, Antigravity, Windsurf, VS Code Copilot, Codex CLI) con la plataforma **Canvas LMS de la Universidad Siglo 21**.
 
-Incluye soporte para consultar materias, notas, trabajos prácticos, cronogramas y **extraer en memoria el texto de lecturas y PDFs** para que el LLM pueda resumirte la materia y responder dudas académicas.
+Proporciona capacidades para consultar asignaturas, calificaciones, trabajos prácticos, cronogramas y realizar la extracción en memoria del contenido de lecturas y documentos PDF para análisis, síntesis y asistencia académica mediante modelos de lenguaje.
 
 ---
 
-## ⚡ Instalación Rápida
+## Instalación
 
-Elegí la sección de tu agente/editor y copiá la configuración. Lo único que necesitás es tu **Token de Canvas** (ver [cómo obtenerlo](#-cómo-obtener-tu-token-de-canvas-siglo-21)).
+Seleccione la configuración correspondiente a su entorno o cliente de IA. Es necesario contar con un token de acceso personal de Canvas LMS (consulte las instrucciones en [Obtención del Token de Canvas](#obtencion-del-token-de-canvas)).
 
 ### 1. Claude Desktop
 
-Archivo de configuración:
+Ruta del archivo de configuración:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
@@ -33,7 +33,7 @@ Archivo de configuración:
 
 ### 2. Antigravity (Gemini)
 
-Archivo: `.gemini/settings.json` en tu workspace (o global en `~/.gemini/settings.json`)
+Archivo: `.gemini/settings.json` en el workspace (o configuración global en `~/.gemini/settings.json`)
 
 ```json
 {
@@ -52,7 +52,7 @@ Archivo: `.gemini/settings.json` en tu workspace (o global en `~/.gemini/setting
 
 ### 3. Cursor
 
-Archivo: `.cursor/mcp.json` en tu workspace
+Archivo: `.cursor/mcp.json` en el workspace
 
 ```json
 {
@@ -71,9 +71,9 @@ Archivo: `.cursor/mcp.json` en tu workspace
 
 ### 4. VS Code Copilot
 
-Archivo: `.vscode/settings.json` en tu workspace
+Archivo: `.vscode/settings.json` en el workspace
 
-> ⚠️ **Atención**: VS Code usa un formato diferente (`mcp.servers` en vez de `mcpServers`).
+> **Nota**: Visual Studio Code emplea una clave específica (`mcp.servers` en lugar de `mcpServers`).
 
 ```json
 {
@@ -132,82 +132,48 @@ Archivo: `~/.codex/config.json`
 
 ---
 
-## 📦 Instalación desde GitHub (sin NPM)
+## Obtencion del Token de Canvas
 
-Si el paquete aún no está publicado en npm, podés instalarlo directamente desde el repositorio público de GitHub. Reemplazá `npx -y s21-canvas-mcp` por:
+1. Inicie sesión en [Canvas Siglo 21](https://siglo21.instructure.com).
+2. Diríjase a [Cuenta](https://siglo21.instructure.com/profile/settings).
+3. Desplácese hasta la sección **Tokens de acceso aprobados** y seleccione **+ Nuevo token de acceso**.
+4. Asigne un nombre identificador (por ejemplo, `MCP-Agent`) y seleccione **Generar token**.
+5. Copie el token generado y asígnelo al parámetro `CANVAS_TOKEN` en la configuración correspondiente.
 
-```json
-"command": "npx",
-"args": ["-y", "github:omniboyOK/siglo21-canvas-mcp"]
-```
-
-O si preferís clonar e instalar manualmente:
-
-```bash
-git clone https://github.com/omniboyOK/siglo21-canvas-mcp.git
-cd siglo21-canvas-mcp
-npm install    # Esto buildea automáticamente via "prepare" script
-```
-
-Luego en tu configuración MCP apuntá al binario local:
-
-```json
-{
-  "mcpServers": {
-    "siglo21": {
-      "command": "node",
-      "args": ["/ruta/completa/a/siglo21-canvas-mcp/dist/index.js"],
-      "env": {
-        "CANVAS_TOKEN": "...",
-        "CANVAS_URL": "https://siglo21.instructure.com"
-      }
-    }
-  }
-}
-```
+IMPORTANTE: No darle los permisos del token a nadie, ya que permite el acceso a toda tu información académica. En caso de hacerlo revocarlo desde la misma sección.
 
 ---
 
-## 🔑 ¿Cómo obtener tu Token de Canvas Siglo 21?
+## Herramientas Disponibles
 
-1. Ingresá a tu cuenta en [Canvas Siglo 21](https://siglo21.instructure.com).
-2. Andá a **Cuenta** (tu foto de perfil en la barra lateral izquierda) > **Configuraciones**.
-3. Scrolleá hasta **Tokens de acceso aprobados** y hacé clic en **+ Nuevo token de acceso**.
-4. Poné un nombre (ej. `MCP-Agente`) y hacé clic en **Generar token**.
-5. Copiá el token generado y pegalo en la variable `CANVAS_TOKEN`.
-
----
-
-## 🛠️ Herramientas Disponibles (Tools)
-
-| Herramienta | Descripción para Alumnos | Parámetros |
+| Herramienta | Descripción | Parámetros |
 | :--- | :--- | :--- |
-| `s21_open_exam_simulator` | **Simulador Interactivo de Exámenes** con persistencia en SQLite local, temporizador de APIs, modos examen/práctica y panel institucional Siglo 21. | `port` (opcional), `auto_open` (boolean) |
-| `s21_save_questions_to_bank` | Guarda un lote de preguntas en la base de datos SQLite local para generar simulacros aleatorios por materia y módulo. | `course_id`, `course_name`, `questions` (array) |
-| `s21_get_exam_bank_summary` | Consulta las estadísticas del banco de preguntas y el promedio histórico de exámenes en SQLite. | - |
-| `s21_open_interactive_guide` | **Portal web interactivo** con guía visual de herramientas, ejemplos y generador de prompts. | `port` (opcional), `auto_open` (boolean) |
-| `s21_check_academic_status` | Calculadora de notas mínimas para Promoción Directa (7+) o Regularidad (5+). | `course_id` (number), `target_promo_grade`, `target_regular_grade` |
-| `s21_generate_practice_quiz` | Generador de prompts y preguntas tipo examen con justificación teórica. | `course_id`, `module_number`, `reading_number`, `question_count` |
-| `s21_audit_rubric` | Auditor de borradores de TP contra la rúbrica oficial de corrección. | `course_id`, `assignment_id`, `draft_text` |
-| `s21_get_pending_tasks` | Agenda consolidada de TPs y entregas con cuenta regresiva. | - |
-| `s21_get_reading` | Buscador directo y extracción de texto de lecturas SAM (1.1 a 4.4). | `course_id`, `module_number`, `reading_number` |
-| `s21_read_pdf_content` | Lector y extractor de texto de PDFs y documentos en memoria. | `file_id` o `download_url`, `max_pages` |
-| `s21_search_readings` | Búsqueda transversal de conceptos en todos tus apuntes y lecturas. | `query` (string) |
-| `s21_list_courses` | Materias activas o históricas, notas y períodos. | `include_concluded` (boolean), `search` (string) |
-| `s21_get_assignments` | TPs, consignas limpias en Markdown y rúbricas. | `course_id` (number) |
-| `s21_get_modules` | Módulos SAM, lecturas y actividades por unidad. | `course_id` (number) |
-| `s21_get_course_files` | Biblioteca de archivos y documentos de la materia. | `course_id` (number) |
-| `s21_get_discussion_topics` | Foros de debate del curso y consignas grupales. | `course_id` (number) |
-| `s21_get_syllabus` | Programa oficial de materia y datos docentes. | `course_id` (number) |
-| `s21_get_upcoming_events` | Próximas entregas y eventos en el calendario. | - |
-| `s21_get_announcements` | Avisos publicados por los profesores. | `course_ids` (number[]) |
-| `s21_get_my_profile` | Perfil del estudiante (nombre, ID, correo). | - |
+| `s21_open_exam_simulator` | Simulador interactivo de exámenes con persistencia en SQLite local, temporizador de API, modos examen/práctica y panel institucional Siglo 21. | `port` (número, opcional), `auto_open` (booleano) |
+| `s21_save_questions_to_bank` | Registra preguntas en la base de datos local SQLite para la generación de simulacros por materia y módulo. | `course_id`, `course_name`, `questions` (array) |
+| `s21_get_exam_bank_summary` | Estadísticas del banco de preguntas y registro histórico de exámenes en SQLite. | - |
+| `s21_open_interactive_guide` | Portal web interactivo con documentación de herramientas, casos de uso y generador de prompts. | `port` (número, opcional), `auto_open` (booleano) |
+| `s21_check_academic_status` | Análisis de calificaciones mínimas requeridas para Promoción Directa (7+) o Regularidad (5+). | `course_id` (número), `target_promo_grade`, `target_regular_grade` |
+| `s21_generate_practice_quiz` | Generación estructurada de preguntas tipo examen con fundamentación conceptual. | `course_id`, `module_number`, `reading_number`, `question_count` |
+| `s21_audit_rubric` | Auditoría de borradores de entregas académicas frente a la rúbrica oficial de evaluación. | `course_id`, `assignment_id`, `draft_text` |
+| `s21_get_pending_tasks` | Consolidación de tareas pendientes y entregas con fechas límite. | - |
+| `s21_get_reading` | Consulta y extracción de texto de lecturas SAM (1.1 a 4.4). | `course_id`, `module_number`, `reading_number` |
+| `s21_read_pdf_content` | Extracción de contenido de documentos PDF en memoria sin almacenamiento en disco. | `file_id` o `download_url`, `max_pages` |
+| `s21_search_readings` | Búsqueda transversal por términos en material y lecturas descargadas. | `query` (string) |
+| `s21_list_courses` | Consulta de asignaturas activas o concluidas, calificaciones y períodos académicos. | `include_concluded` (booleano), `search` (string) |
+| `s21_get_assignments` | Trabajos prácticos, consignas en formato Markdown y criterios de rúbrica. | `course_id` (número) |
+| `s21_get_modules` | Estructura de módulos SAM, lecturas y actividades organizadas por unidad. | `course_id` (número) |
+| `s21_get_course_files` | Explorador de archivos y documentos asociados a la asignatura. | `course_id` (número) |
+| `s21_get_discussion_topics` | Foros de discusión académica y consignas de trabajo grupal. | `course_id` (número) |
+| `s21_get_syllabus` | Programa oficial de la asignatura y datos del cuerpo docente. | `course_id` (número) |
+| `s21_get_upcoming_events` | Próximos eventos y fechas límite del calendario institucional. | - |
+| `s21_get_announcements` | Anuncios institucionales y publicaciones de cátedra. | `course_ids` (array de números) |
+| `s21_get_my_profile` | Datos del perfil de estudiante (nombre, identificador institucional, correo electrónico). | - |
 
 ---
 
-## 💻 Desarrollo Local y Compilación
+## Desarrollo Local
 
-Si deseas probar o modificar el código localmente:
+Para compilar y ejecutar el proyecto en un entorno de desarrollo local:
 
 ```bash
 cd s21-canvas-mcp
@@ -215,15 +181,17 @@ npm install
 npm run build
 ```
 
-Para probarlo localmente sin publicar:
+Ejecución directa del servidor compilado:
 ```bash
 node dist/index.js
 ```
-O enlazarlo localmente:
+
+Para registrar el binario en el entorno local:
 ```bash
 npm link
 ```
-Y luego en tu configuración MCP:
+
+Configuración MCP para el binario enlazado:
 ```json
 {
   "mcpServers": {
@@ -240,27 +208,15 @@ Y luego en tu configuración MCP:
 
 ---
 
-## 🚀 Publicación en NPM
+## Compatibilidad de Clientes MCP
 
-Para publicarlo y que esté disponible con `npx s21-canvas-mcp` para todo el mundo:
-
-```bash
-npm login
-npm publish --access public
-```
-
----
-
-## 🤖 Compatibilidad de Agentes
-
-| Agente | Transporte | Funciona | Notas |
-|:---|:---|:---:|:---|
-| Claude Desktop | stdio | ✅ | Soporte completo |
-| Antigravity (Gemini) | stdio | ✅ | Soporte completo |
-| Cursor | stdio | ✅ | Soporte completo |
-| VS Code Copilot | stdio | ✅ | Formato de config diferente (`mcp.servers`) |
-| Windsurf | stdio | ✅ | Soporte completo |
-| Codex CLI (OpenAI) | stdio | ✅ | Soporte completo |
-| Codex Cloud (ChatGPT) | — | ❌ | Sandbox aislado, sin MCP |
-| ChatGPT (web/app) | HTTP remoto | ⚠️ | Requeriría hosting HTTP público |
-
+| Cliente | Transporte | Estado | Observaciones |
+| :--- | :--- | :---: | :--- |
+| Claude Desktop | stdio | Compatible | Soporte completo |
+| Antigravity (Gemini) | stdio | Compatible | Soporte completo |
+| Cursor | stdio | Compatible | Soporte completo |
+| VS Code Copilot | stdio | Compatible | Requiere clave `mcp.servers` en configuración |
+| Windsurf | stdio | Compatible | Soporte completo |
+| Codex CLI (OpenAI) | stdio | Compatible | Soporte completo |
+| Codex Cloud (ChatGPT) | — | No compatible | Entorno aislado sin soporte de transporte MCP |
+| ChatGPT (Web / Desktop App) | HTTP remoto | Limitado | Requiere despliegue como servicio HTTP accesible públicamente |

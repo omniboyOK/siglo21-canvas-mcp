@@ -8,6 +8,20 @@ export interface PdfExtractResult {
 }
 
 /**
+ * Valida que una URL pertenezca al dominio configurado de Canvas LMS
+ */
+export function isCanvasUrl(url: string, canvasBaseUrl: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const canvasHost = new URL(canvasBaseUrl).hostname.toLowerCase();
+    const targetHost = parsed.hostname.toLowerCase();
+    return targetHost === canvasHost || targetHost.endsWith(".instructure.com");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Descarga y extrae el texto de un PDF en memoria sin guardarlo en disco.
  */
 export async function extractPdfTextFromBuffer(
@@ -36,17 +50,19 @@ export async function extractPdfTextFromBuffer(
 }
 
 /**
- * Descarga un archivo PDF desde una URL con autorización Bearer y extrae su texto.
+ * Descarga un archivo PDF desde una URL con autorización Bearer (solo si es dominio Canvas) y extrae su texto.
  */
 export async function downloadAndExtractPdf(
   url: string,
   token?: string,
-  maxPages?: number
+  maxPages?: number,
+  canvasBaseUrl?: string
 ): Promise<PdfExtractResult> {
   const headers: Record<string, string> = {
     "User-Agent": "S21-Canvas-MCP/1.0",
   };
-  if (token) {
+  const shouldAuth = canvasBaseUrl ? isCanvasUrl(url, canvasBaseUrl) : Boolean(token);
+  if (token && shouldAuth) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
@@ -60,3 +76,4 @@ export async function downloadAndExtractPdf(
 
   return extractPdfTextFromBuffer(buffer, maxPages);
 }
+

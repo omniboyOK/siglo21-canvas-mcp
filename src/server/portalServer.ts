@@ -37,6 +37,34 @@ export async function startExamSimulatorServer(
 
   const server = http.createServer(async (req, res) => {
     try {
+      // CORS restrictivo: solo permitir localhost y 127.0.0.1
+      const origin = req.headers.origin;
+      if (origin) {
+        let isAllowed = false;
+        try {
+          const originUrl = new URL(origin);
+          isAllowed = originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1";
+        } catch {
+          isAllowed = false;
+        }
+
+        if (!isAllowed) {
+          res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "Origen no permitido" }));
+          return;
+        }
+
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      }
+
+      if (req.method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       const host = req.headers.host || `localhost:${port}`;
       const reqUrl = new URL(req.url || "/", `http://${host}`);
 
@@ -84,9 +112,10 @@ export async function startExamSimulatorServer(
     } catch (err: any) {
       console.error("Error en Portal Server:", err);
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end(`Error interno del servidor: ${err.message}`);
+      res.end("Error interno del servidor");
     }
   });
+
 
   return new Promise((resolve, reject) => {
     server.on("error", (err: any) => {

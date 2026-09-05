@@ -65,10 +65,20 @@ export function handleStaticRequest(req: http.IncomingMessage, res: http.ServerR
   // Prevenir Directory Traversal
   const safePath = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, '');
 
-  let fullPath = path.join(PUBLIC_DIR, safePath);
+  let fullPath = path.resolve(PUBLIC_DIR, safePath);
   if (!fs.existsSync(fullPath)) {
-    fullPath = path.join(FALLBACK_PUBLIC_DIR, safePath);
+    fullPath = path.resolve(FALLBACK_PUBLIC_DIR, safePath);
   }
+
+  // Verificar que el path resuelto no escape de los directorios públicos
+  const inPublicDir = fullPath.startsWith(PUBLIC_DIR);
+  const inFallbackDir = fullPath.startsWith(FALLBACK_PUBLIC_DIR);
+  if (!inPublicDir && !inFallbackDir) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Acceso denegado');
+    return true;
+  }
+
 
   if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
     const fileExt = path.extname(fullPath).toLowerCase();
