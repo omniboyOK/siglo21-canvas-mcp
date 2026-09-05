@@ -53,13 +53,9 @@ export function handleStaticRequest(req: http.IncomingMessage, res: http.ServerR
     return false;
   }
 
-  let relativePath = pathname;
+  let relativePath = pathname.replace(/^\/+/, '');
   if (pathname.startsWith('/static/')) {
-    relativePath = pathname.replace('/static/', '');
-  } else if (pathname.startsWith('/assets/')) {
-    relativePath = pathname; // mantiene assets/...
-  } else {
-    relativePath = pathname.replace(/^\/+/, '');
+    relativePath = pathname.replace(/^\/static\//, '');
   }
 
   // Prevenir Directory Traversal
@@ -70,10 +66,20 @@ export function handleStaticRequest(req: http.IncomingMessage, res: http.ServerR
     fullPath = path.resolve(FALLBACK_PUBLIC_DIR, safePath);
   }
 
-  // Verificar que el path resuelto no escape de los directorios públicos
-  const inPublicDir = fullPath.startsWith(PUBLIC_DIR);
-  const inFallbackDir = fullPath.startsWith(FALLBACK_PUBLIC_DIR);
+  // Normalizar para comparación robusta y compatible con Windows
+  const normFullPath = path.normalize(fullPath).toLowerCase();
+  const normPublicDir = path.normalize(PUBLIC_DIR).toLowerCase();
+  const normFallbackDir = path.normalize(FALLBACK_PUBLIC_DIR).toLowerCase();
+
+  const ensureTrailingSep = (p: string) => (p.endsWith(path.sep) ? p : p + path.sep);
+
+  const inPublicDir =
+    normFullPath.startsWith(ensureTrailingSep(normPublicDir)) || normFullPath === normPublicDir;
+  const inFallbackDir =
+    normFullPath.startsWith(ensureTrailingSep(normFallbackDir)) || normFullPath === normFallbackDir;
+
   if (!inPublicDir && !inFallbackDir) {
+    console.warn(`[StaticRouter] 403 Acceso denegado para: ${pathname} (normFullPath: ${normFullPath})`);
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Acceso denegado');
     return true;

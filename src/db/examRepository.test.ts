@@ -74,6 +74,9 @@ describe("ExamRepository (SQLite en memoria)", () => {
     const allQuestions = ExamRepository.getQuestions(testCourseId);
     assert.strictEqual(allQuestions.length, 2);
 
+    const limitedQuestions = ExamRepository.getQuestions(testCourseId, undefined, 1);
+    assert.strictEqual(limitedQuestions.length, 1);
+
     const summary = ExamRepository.getCoursesSummary();
     assert.strictEqual(summary[0].question_count, 2);
     assert.deepStrictEqual(summary[0].modules, [1, 2]);

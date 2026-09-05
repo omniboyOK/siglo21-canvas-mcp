@@ -16,16 +16,37 @@ export interface PortalServerResult {
   server: http.Server;
 }
 
+export interface StartSimulatorOptions {
+  courseId?: number;
+  mode?: "exam" | "practice" | "real_exam";
+  startExam?: boolean;
+}
+
 let activePortalServer: http.Server | null = null;
 
 export async function startExamSimulatorServer(
   port = 42122,
   autoOpen = true,
-  initialTab: "home" | "simulator" | "mcp" = "home"
+  initialTab: "home" | "simulator" | "mcp" = "home",
+  options: StartSimulatorOptions = {}
 ): Promise<PortalServerResult> {
-  const targetUrl = initialTab !== "home" 
-    ? `http://localhost:${port}/?tab=${initialTab}` 
-    : `http://localhost:${port}`;
+  const queryParams = new URLSearchParams();
+  if (initialTab !== "home") {
+    queryParams.set("tab", initialTab);
+  }
+  if (options.courseId) {
+    queryParams.set("course_id", String(options.courseId));
+  }
+  if (options.mode) {
+    const normalizedMode = options.mode === "real_exam" ? "exam" : options.mode;
+    queryParams.set("mode", normalizedMode);
+  }
+  if (options.startExam) {
+    queryParams.set("start_exam", "true");
+  }
+
+  const qs = queryParams.toString();
+  const targetUrl = qs ? `http://localhost:${port}/?${qs}` : `http://localhost:${port}`;
 
   // Si ya hay un servidor activo en este proceso, reutilizarlo
   if (activePortalServer && activePortalServer.listening) {
@@ -37,15 +58,29 @@ export async function startExamSimulatorServer(
 
   const server = http.createServer(async (req, res) => {
     try {
-      // CORS restrictivo: solo permitir localhost y 127.0.0.1
+      // CORS restrictivo: permitir localhost, 127.0.0.1, ::1 y origen null/local (Edge app mode / Webview)
       const origin = req.headers.origin;
       if (origin) {
         let isAllowed = false;
-        try {
-          const originUrl = new URL(origin);
-          isAllowed = originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1";
-        } catch {
-          isAllowed = false;
+        if (
+          origin === "null" ||
+          origin.startsWith("vscode-webview://") ||
+          origin.startsWith("app://") ||
+          origin.startsWith("file://")
+        ) {
+          isAllowed = true;
+        } else {
+          try {
+            const originUrl = new URL(origin);
+            const host = originUrl.hostname.toLowerCase();
+            isAllowed =
+              host === "localhost" ||
+              host === "127.0.0.1" ||
+              host === "::1" ||
+              host === "0.0.0.0";
+          } catch {
+            isAllowed = false;
+          }
         }
 
         if (!isAllowed) {
@@ -121,7 +156,7 @@ export async function startExamSimulatorServer(
     server.on("error", (err: any) => {
       if (err.code === "EADDRINUSE") {
         console.error(`[S21 Portal] El puerto ${port} está ocupado. Intentando en puerto alternativo ${port + 1}...`);
-        startExamSimulatorServer(port + 1, autoOpen, initialTab).then(resolve).catch(reject);
+        startExamSimulatorServer(port + 1, autoOpen, initialTab, options).then(resolve).catch(reject);
       } else {
         reject(err);
       }

@@ -337,7 +337,7 @@ export async function handleApiRequest(
     return true;
   }
 
-  // GET /api/questions?course_id=...&module=...
+  // GET /api/questions?course_id=...&module=...&limit=...
   if (pathname === "/api/questions" && req.method === "GET") {
     const courseId = Number(reqUrl.searchParams.get("course_id"));
     if (!courseId) {
@@ -347,7 +347,9 @@ export async function handleApiRequest(
     }
     const modParam = reqUrl.searchParams.get("module");
     const moduleNumber = modParam ? Number(modParam) : undefined;
-    const questions = ExamRepository.getQuestions(courseId, moduleNumber);
+    const limitParam = reqUrl.searchParams.get("limit");
+    const limit = limitParam && !isNaN(Number(limitParam)) ? Number(limitParam) : undefined;
+    const questions = ExamRepository.getQuestions(courseId, moduleNumber, limit);
     res.writeHead(200);
     res.end(JSON.stringify({ ok: true, data: questions }));
     return true;

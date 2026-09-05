@@ -10,5 +10,6 @@
 
 export {
   startExamSimulatorServer,
-  type PortalServerResult
+  type PortalServerResult,
+  type StartSimulatorOptions
 } from "./server/portalServer.js";

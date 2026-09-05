@@ -186,7 +186,7 @@ export class ExamRepository {
   /**
    * Retorna preguntas completas de una materia (para inspección o edición).
    */
-  static getQuestions(courseId: number, moduleNumber?: number): QuestionRecord[] {
+  static getQuestions(courseId: number, moduleNumber?: number, limit?: number): QuestionRecord[] {
     const db = getDb();
     let query = `SELECT * FROM questions WHERE course_id = ?`;
     const params: any[] = [courseId];
@@ -195,7 +195,13 @@ export class ExamRepository {
       query += ` AND module_number = ?`;
       params.push(moduleNumber);
     }
-    query += ` ORDER BY module_number ASC, id ASC;`;
+    query += ` ORDER BY module_number ASC, id ASC`;
+
+    if (limit && limit > 0) {
+      query += ` LIMIT ?`;
+      params.push(limit);
+    }
+    query += `;`;
 
     const stmt = db.prepare(query);
     const rows = stmt.all(...params) as any[];

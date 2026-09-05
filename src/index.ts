@@ -199,7 +199,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "s21_generate_practice_quiz",
-        description: "Genera un simulacro de examen tipo API/parcial con preguntas multiple choice y justificaciones teóricas basado en la lectura oficial.",
+        description: "Genera un simulacro de examen tipo API/parcial con preguntas multiple choice y justificaciones teóricas basado en la lectura oficial de Canvas. DIRECTIVA DE FLUJO: Cuando el usuario solicite preparar, rendir o entrenar para un examen interactivo, genera las preguntas con distractores y explicaciones académicas, guárdalas en SQLite con 's21_save_questions_to_bank' e invoca 's21_open_exam_simulator' con el 'course_id' correspondiente y 'start_exam': true para ofrecer la experiencia de examen interactiva.",
         inputSchema: {
           type: "object",
           properties: {
@@ -328,7 +328,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "s21_open_exam_simulator",
-        description: "Abre el portal interactivo de Universidad Siglo 21 directamente en la sección del Simulador de Exámenes (preparación de parciales tipo API, temporizador, banco de preguntas SQLite y notas).",
+        description: "Abre el portal institucional interactivo posicionado directamente en el Simulador de Exámenes (preparación de parciales tipo API, temporizador, banco de preguntas SQLite y notas). DIRECTIVA DE FLUJO: Soporta 'course_id', 'mode' ('exam' o 'practice') y 'start_exam': true para iniciar inmediatamente el examen al abrir la aplicación sin requerir clics manuales del usuario.",
         inputSchema: {
           type: "object",
           properties: {
@@ -340,12 +340,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "boolean",
               description: "Si es true (por defecto), abre automáticamente la ventana en modo aplicación.",
             },
+            course_id: {
+              type: "number",
+              description: "ID opcional de la materia en Canvas (ej: 34584) para pre-seleccionar o iniciar el examen directamente.",
+            },
+            mode: {
+              type: "string",
+              enum: ["exam", "practice", "real_exam"],
+              description: "Modalidad opcional del simulador: 'exam' (simulacro cronometrado) o 'practice' (modo práctica y estudio con feedback inmediato).",
+            },
+            start_exam: {
+              type: "boolean",
+              description: "Si es true y se especifica course_id, inicia el examen automáticamente sin requerir clics adicionales.",
+            },
           },
         },
       },
       {
         name: "s21_save_questions_to_bank",
-        description: "Guarda un lote de preguntas de examen en la base de datos SQLite local, categorizadas por materia, módulo, lectura y tema, con distractores y justificación académica.",
+        description: "Guarda un lote de preguntas de examen en la base de datos SQLite local, categorizadas por materia, módulo, lectura y tema, con distractores y justificación académica. DIRECTIVA DE FLUJO: Tras guardar preguntas en el banco para una materia o cuando el alumno exprese intención de rendir/practicar, invoca 's21_open_exam_simulator' con el 'course_id' correspondiente para abrirle el entorno de examen interactivo.",
         inputSchema: {
           type: "object",
           properties: {
@@ -391,6 +404,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["course_id", "course_name", "questions"],
+        },
+      },
+      {
+        name: "s21_get_bank_questions",
+        description: "Obtiene las preguntas existentes guardadas en el banco local SQLite para una materia. Permite consultar el contenido del banco, verificar preguntas antes de generar nuevas (evitando duplicados), o revisar preguntas específicas con el alumno directamente en el chat.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            course_id: {
+              type: "number",
+              description: "ID numérico de la materia en Canvas (ej: 34584).",
+            },
+            module_number: {
+              type: "number",
+              description: "Número de módulo opcional (1-4) para filtrar las preguntas.",
+            },
+            limit: {
+              type: "number",
+              description: "Cantidad máxima de preguntas a recuperar (opcional, ej: 20).",
+            },
+          },
+          required: ["course_id"],
         },
       },
       {
@@ -440,12 +475,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const port = args?.port ? Number(args?.port) : 42122;
       const autoOpen = args?.auto_open !== false;
-      const result = await startExamSimulatorServer(port, autoOpen, "simulator");
+      const courseId = args?.course_id ? Number(args?.course_id) : undefined;
+      const mode = args?.mode ? (String(args?.mode) as "exam" | "practice" | "real_exam") : undefined;
+      const startExam = args?.start_exam === true;
+
+      const result = await startExamSimulatorServer(port, autoOpen, "simulator", {
+        courseId,
+        mode,
+        startExam,
+      });
+
+      const details: string[] = [];
+      if (courseId) details.push(`• Materia pre-seleccionada: ID ${courseId}`);
+      if (mode) details.push(`• Modalidad configurada: ${mode}`);
+      if (startExam) details.push(`• Inicio automático activado: El examen arrancará inmediatamente.`);
+
+      const detailsText = details.length > 0 ? `\n\nConfiguración directa:\n${details.join("\n")}` : "";
+
       return {
         content: [
           {
             type: "text",
-            text: `🎯 Simulador de Exámenes iniciado con éxito en ${result.url}\n\nSe ha abierto el portal directamente en la pestaña del Simulador con interfaz institucional Siglo 21 y motor SQLite local.\nPuedes configurar simulacros cronometrados (formato API), modo práctica con feedback inmediato, explorar el banco de preguntas o revisar tu historial y estadísticas.`,
+            text: `🎯 Simulador de Exámenes iniciado con éxito en ${result.url}\n\nSe ha abierto el portal directamente en la pestaña del Simulador con interfaz institucional Siglo 21 y motor SQLite local.${detailsText}\nPuedes configurar simulacros cronometrados (formato API), modo práctica con feedback inmediato, explorar el banco de preguntas o revisar tu historial y estadísticas.`,
           },
         ],
       };
@@ -456,6 +507,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text",
             text: `Error al iniciar el simulador de exámenes: ${error.message || String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+
+  if (name === "s21_get_bank_questions") {
+    try {
+      const courseId = Number(args?.course_id);
+      if (!courseId) {
+        throw new Error("El parámetro 'course_id' es requerido y debe ser un número.");
+      }
+      const moduleNumber = args?.module_number ? Number(args?.module_number) : undefined;
+      const limit = args?.limit ? Number(args?.limit) : undefined;
+
+      const questions = ExamRepository.getQuestions(courseId, moduleNumber, limit);
+      const formatted = questions.map((q) => ({
+        id: q.id,
+        course_id: q.course_id,
+        module_number: q.module_number,
+        reading_number: q.reading_number,
+        topic: q.topic,
+        question_text: q.question_text,
+        options: q.options,
+        correct_index: q.correct_option_index,
+        correct_option_index: q.correct_option_index,
+        explanation: q.explanation,
+        difficulty: q.difficulty,
+        created_at: q.created_at,
+      }));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(formatted, null, 2),
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: `Error al consultar preguntas del banco SQLite: ${error.message || String(error)}`,
           },
         ],
       };
