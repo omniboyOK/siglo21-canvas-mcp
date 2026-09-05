@@ -1,11 +1,11 @@
 {
   "name": "s21-canvas-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Servidor MCP para interactuar con Canvas LMS de Universidad Siglo 21 y extraer contenido de lecturas/PDFs",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "s21-canvas-mcp": "./dist/index.js"
+    "s21-canvas-mcp": "dist/index.js"
   },
   "files": [
     "dist",
@@ -39,7 +39,6 @@
     "url": "https://github.com/omniboyOK/siglo21-canvas-mcp/issues"
   },
   "homepage": "https://github.com/omniboyOK/siglo21-canvas-mcp#readme",
-
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
     "pdf-parse": "^1.1.1",
@@ -54,4 +53,3 @@
     "node": ">=22.0.0"
   }
 }
-
