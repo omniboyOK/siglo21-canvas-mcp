@@ -1,18 +1,18 @@
 # 🎓 s21-canvas-mcp
 
-Servidor **Model Context Protocol (MCP)** para conectar asistentes de IA (Claude Desktop, Cursor, Antigravity, Windsurf) con el entorno **Canvas LMS de la Universidad Siglo 21**.
+Servidor **Model Context Protocol (MCP)** para conectar asistentes de IA (Claude Desktop, Cursor, Antigravity, Windsurf, VS Code Copilot, Codex CLI) con el entorno **Canvas LMS de la Universidad Siglo 21**.
 
 Incluye soporte para consultar materias, notas, trabajos prácticos, cronogramas y **extraer en memoria el texto de lecturas y PDFs** para que el LLM pueda resumirte la materia y responder dudas académicas.
 
 ---
 
-## ⚡ Instalación y Uso Rápido con `npx`
+## ⚡ Instalación Rápida
 
-No necesitas clonar ni instalar nada permanente si lo agregas directamente a tu cliente MCP preferido:
+Elegí la sección de tu agente/editor y copiá la configuración. Lo único que necesitás es tu **Token de Canvas** (ver [cómo obtenerlo](#-cómo-obtener-tu-token-de-canvas-siglo-21)).
 
-### 1. Claude Desktop (`claude_desktop_config.json`)
+### 1. Claude Desktop
 
-Ubica tu archivo de configuración:
+Archivo de configuración:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
@@ -31,9 +31,9 @@ Ubica tu archivo de configuración:
 }
 ```
 
-### 2. Antigravity / Cursor / Windsurf
+### 2. Antigravity (Gemini)
 
-En la configuración de MCP de tu editor (o en `.gemini/antigravity/mcp.json`):
+Archivo: `.gemini/settings.json` en tu workspace (o global en `~/.gemini/settings.json`)
 
 ```json
 {
@@ -43,6 +43,122 @@ En la configuración de MCP de tu editor (o en `.gemini/antigravity/mcp.json`):
       "args": ["-y", "s21-canvas-mcp"],
       "env": {
         "CANVAS_TOKEN": "tu_token_de_canvas_aqui",
+        "CANVAS_URL": "https://siglo21.instructure.com"
+      }
+    }
+  }
+}
+```
+
+### 3. Cursor
+
+Archivo: `.cursor/mcp.json` en tu workspace
+
+```json
+{
+  "mcpServers": {
+    "siglo21": {
+      "command": "npx",
+      "args": ["-y", "s21-canvas-mcp"],
+      "env": {
+        "CANVAS_TOKEN": "tu_token_de_canvas_aqui",
+        "CANVAS_URL": "https://siglo21.instructure.com"
+      }
+    }
+  }
+}
+```
+
+### 4. VS Code Copilot
+
+Archivo: `.vscode/settings.json` en tu workspace
+
+> ⚠️ **Atención**: VS Code usa un formato diferente (`mcp.servers` en vez de `mcpServers`).
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "siglo21": {
+        "command": "npx",
+        "args": ["-y", "s21-canvas-mcp"],
+        "env": {
+          "CANVAS_TOKEN": "tu_token_de_canvas_aqui",
+          "CANVAS_URL": "https://siglo21.instructure.com"
+        }
+      }
+    }
+  }
+}
+```
+
+### 5. Windsurf
+
+Archivo: `~/.codeium/windsurf/mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "siglo21": {
+      "command": "npx",
+      "args": ["-y", "s21-canvas-mcp"],
+      "env": {
+        "CANVAS_TOKEN": "tu_token_de_canvas_aqui",
+        "CANVAS_URL": "https://siglo21.instructure.com"
+      }
+    }
+  }
+}
+```
+
+### 6. Codex CLI (OpenAI)
+
+Archivo: `~/.codex/config.json`
+
+```json
+{
+  "mcpServers": {
+    "siglo21": {
+      "command": "npx",
+      "args": ["-y", "s21-canvas-mcp"],
+      "env": {
+        "CANVAS_TOKEN": "tu_token_de_canvas_aqui",
+        "CANVAS_URL": "https://siglo21.instructure.com"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 📦 Instalación desde GitHub (sin NPM)
+
+Si el paquete aún no está publicado en npm, podés instalarlo directamente desde el repositorio público de GitHub. Reemplazá `npx -y s21-canvas-mcp` por:
+
+```json
+"command": "npx",
+"args": ["-y", "github:omniboyOK/siglo21-canvas-mcp"]
+```
+
+O si preferís clonar e instalar manualmente:
+
+```bash
+git clone https://github.com/omniboyOK/siglo21-canvas-mcp.git
+cd siglo21-canvas-mcp
+npm install    # Esto buildea automáticamente via "prepare" script
+```
+
+Luego en tu configuración MCP apuntá al binario local:
+
+```json
+{
+  "mcpServers": {
+    "siglo21": {
+      "command": "node",
+      "args": ["/ruta/completa/a/siglo21-canvas-mcp/dist/index.js"],
+      "env": {
+        "CANVAS_TOKEN": "...",
         "CANVAS_URL": "https://siglo21.instructure.com"
       }
     }
@@ -132,3 +248,19 @@ Para publicarlo y que esté disponible con `npx s21-canvas-mcp` para todo el mun
 npm login
 npm publish --access public
 ```
+
+---
+
+## 🤖 Compatibilidad de Agentes
+
+| Agente | Transporte | Funciona | Notas |
+|:---|:---|:---:|:---|
+| Claude Desktop | stdio | ✅ | Soporte completo |
+| Antigravity (Gemini) | stdio | ✅ | Soporte completo |
+| Cursor | stdio | ✅ | Soporte completo |
+| VS Code Copilot | stdio | ✅ | Formato de config diferente (`mcp.servers`) |
+| Windsurf | stdio | ✅ | Soporte completo |
+| Codex CLI (OpenAI) | stdio | ✅ | Soporte completo |
+| Codex Cloud (ChatGPT) | — | ❌ | Sandbox aislado, sin MCP |
+| ChatGPT (web/app) | HTTP remoto | ⚠️ | Requeriría hosting HTTP público |
+
