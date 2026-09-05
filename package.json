@@ -29,8 +29,17 @@
     "education",
     "ai"
   ],
-  "author": "",
+  "author": "omniboyOK",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omniboyOK/siglo21-canvas-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/omniboyOK/siglo21-canvas-mcp/issues"
+  },
+  "homepage": "https://github.com/omniboyOK/siglo21-canvas-mcp#readme",
+
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
     "pdf-parse": "^1.1.1",
