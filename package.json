@@ -49,5 +49,9 @@
     "@types/node": "^22.13.9",
     "@types/pdf-parse": "^1.1.4",
     "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }
+
