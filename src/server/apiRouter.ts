@@ -4,6 +4,7 @@ import { ExamRepository } from "../db/examRepository.js";
 import { TOOLS_CATALOG } from "../toolsCatalog.js";
 import { CanvasClient } from "../canvasClient.js";
 import { downloadAndExtractPdf, isCanvasUrl } from "../pdfReader.js";
+import * as storageManager from "../storageManager.js";
 
 import fs from "node:fs";
 import os from "node:os";
@@ -14,21 +15,30 @@ function resolveCanvasCredentials() {
   let token = process.env.CANVAS_TOKEN || "";
 
   if (!token) {
-    try {
-      const configPath = path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json");
-      if (fs.existsSync(configPath)) {
-        const raw = fs.readFileSync(configPath, "utf-8");
-        const parsed = JSON.parse(raw);
-        if (parsed?.mcpServers?.siglo21?.env?.CANVAS_TOKEN) {
-          token = parsed.mcpServers.siglo21.env.CANVAS_TOKEN;
-          console.warn("[S21 Portal] Aviso: CANVAS_TOKEN cargado desde archivo de configuración local de desarrollo.");
+    const candidatePaths = [
+      path.join(os.homedir(), ".gemini", "config", "mcp_config.json"),
+      path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json"),
+      path.join(os.homedir(), ".gemini", "antigravity-ide", "mcp_config.json"),
+    ];
+
+    for (const configPath of candidatePaths) {
+      if (token) break;
+      try {
+        if (fs.existsSync(configPath)) {
+          const raw = fs.readFileSync(configPath, "utf-8");
+          const parsed = JSON.parse(raw);
+          const serverConfig = parsed?.mcpServers?.["s21-canvas-mcp"] || parsed?.mcpServers?.["siglo21"];
+          if (serverConfig?.env?.CANVAS_TOKEN) {
+            token = serverConfig.env.CANVAS_TOKEN;
+            console.warn(`[S21 Portal] Aviso: CANVAS_TOKEN cargado desde ${configPath}`);
+          }
+          if (serverConfig?.env?.CANVAS_URL) {
+            url = serverConfig.env.CANVAS_URL.replace(/\/+$/, "");
+          }
         }
-        if (parsed?.mcpServers?.siglo21?.env?.CANVAS_URL) {
-          url = parsed.mcpServers.siglo21.env.CANVAS_URL.replace(/\/+$/, "");
-        }
+      } catch {
+        // Ignorar fallo de lectura de config
       }
-    } catch {
-      // Ignorar fallo de lectura de config
     }
   }
   return { url, token };
@@ -106,8 +116,26 @@ export async function handleApiRequest(
     }
     try {
       const dashboard = await activeCanvasClient.getStudentDashboard();
+      let pendingTasks: any[] = [];
+      try {
+        pendingTasks = await activeCanvasClient.getPendingTasks();
+      } catch {
+        // Silencioso si falla pending tasks
+      }
+
+      const normalizedDashboard = {
+        ...dashboard,
+        student: dashboard.profile,
+        active_courses: dashboard.activeCourses,
+        historical_courses: dashboard.historicalCourses,
+        concluded_courses: dashboard.historicalCourses,
+        upcoming_events: dashboard.upcomingEvents,
+        pendingTasks,
+        pending_tasks: pendingTasks,
+      };
+
       res.writeHead(200);
-      res.end(JSON.stringify({ ok: true, data: dashboard }));
+      res.end(JSON.stringify({ ok: true, data: normalizedDashboard }));
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ ok: false, error: err.message }));
@@ -194,21 +222,59 @@ export async function handleApiRequest(
   // GET /api/canvas/courses/:id/reading-text
   const readingTextMatch = pathname.match(/^\/api\/canvas\/courses\/(\d+)\/reading-text$/);
   if (readingTextMatch && req.method === "GET") {
-    if (!activeCanvasClient) {
-      res.writeHead(503);
-      res.end(JSON.stringify({ ok: false, error: "Canvas Client no configurado o token ausente" }));
-      return true;
-    }
     try {
       const courseId = Number(readingTextMatch[1]);
       const moduleNum = Number(reqUrl.searchParams.get("module") || "1");
       const readingNum = Number(reqUrl.searchParams.get("reading") || "1");
       const fileIdParam = reqUrl.searchParams.get("file_id");
+      const courseNameParam = reqUrl.searchParams.get("course_name") || "";
+
+      // 1. Verificar si ya existe guardada en disco localmente (Offline-First)
+      const localReading = storageManager.getReading(courseId, moduleNum, readingNum);
+      if (localReading) {
+        const pdfFilename = localReading.pdfPath ? path.basename(localReading.pdfPath) : "";
+        const downloadUrl = pdfFilename
+          ? `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}`
+          : "";
+        const inlineUrl = pdfFilename
+          ? `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}&inline=true`
+          : "";
+
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          ok: true,
+          data: {
+            title: localReading.title,
+            text: localReading.markdown,
+            num_pages: 0,
+            download_url: downloadUrl,
+            inline_url: inlineUrl,
+            online_url: "",
+            source: "local",
+            local: true,
+            has_pdf: localReading.hasPdf,
+            pdf_path: localReading.pdfPath,
+            md_path: localReading.mdPath,
+          },
+        }));
+        return true;
+      }
+
+      // Si no está en disco local, requerimos Canvas Client para consultar online
+      if (!activeCanvasClient) {
+        res.writeHead(503);
+        res.end(JSON.stringify({ ok: false, error: "Canvas Client no configurado o token ausente" }));
+        return true;
+      }
 
       let extractedText = "";
       let title = `Módulo ${moduleNum} - Lectura ${readingNum}`;
       let downloadUrl = "";
+      let inlineUrl = "";
+      let onlineUrl = "";
+      let sourceType = "canvas";
       let numPages = 0;
+      let pdfBuffer: Buffer | undefined;
 
       if (fileIdParam) {
         const fileInfo = await activeCanvasClient.getFileInfo(Number(fileIdParam));
@@ -218,11 +284,15 @@ export async function handleApiRequest(
           const ext = await activeCanvasClient.downloadPdf(downloadUrl, 30);
           extractedText = ext.text;
           numPages = ext.numPages;
+          pdfBuffer = ext.buffer;
         }
       } else {
         const readingInfo = await activeCanvasClient.findReading(courseId, moduleNum, readingNum);
         if (readingInfo) {
           title = readingInfo.item_title || title;
+          onlineUrl = readingInfo.url || "";
+          sourceType = readingInfo.source || readingInfo.type || "canvas";
+
           let dlUrl = readingInfo.download_url;
           if (!dlUrl && readingInfo.file_id) {
             const fInfo = await activeCanvasClient.getFileInfo(readingInfo.file_id);
@@ -234,12 +304,45 @@ export async function handleApiRequest(
               const ext = await activeCanvasClient.downloadPdf(dlUrl, 30);
               extractedText = ext.text;
               numPages = ext.numPages;
+              pdfBuffer = ext.buffer;
             } catch (e: any) {
               extractedText = readingInfo.description_markdown || `No se pudo extraer texto del archivo: ${e.message}`;
             }
           } else if (readingInfo.description_markdown) {
             extractedText = readingInfo.description_markdown;
           }
+        }
+      }
+
+      // Resolver nombre de curso si es necesario para nombrar la carpeta
+      let resolvedCourseName = courseNameParam;
+      if (!resolvedCourseName && activeCanvasClient) {
+        try {
+          const cInfo = await activeCanvasClient.getCourse(courseId);
+          if (cInfo?.name) resolvedCourseName = cInfo.name;
+        } catch {}
+      }
+
+      // Guardar en disco tanto el Markdown procesado como el PDF original si se extrajo texto
+      let savedResult: { mdPath: string; pdfPath?: string } | undefined;
+      if (extractedText && extractedText.trim()) {
+        try {
+          savedResult = storageManager.saveReading(
+            courseId,
+            moduleNum,
+            readingNum,
+            title,
+            extractedText,
+            pdfBuffer,
+            resolvedCourseName
+          );
+          if (savedResult.pdfPath) {
+            const pdfFilename = path.basename(savedResult.pdfPath);
+            downloadUrl = `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}`;
+            inlineUrl = `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}&inline=true`;
+          }
+        } catch (saveErr) {
+          console.warn("[Storage] Error al persistir lectura local en disco:", saveErr);
         }
       }
 
@@ -251,6 +354,12 @@ export async function handleApiRequest(
           text: extractedText || "No se encontró contenido textual disponible para esta lectura.",
           num_pages: numPages,
           download_url: downloadUrl,
+          inline_url: inlineUrl,
+          online_url: onlineUrl,
+          source: sourceType,
+          local: Boolean(savedResult?.mdPath || savedResult?.pdfPath),
+          has_pdf: Boolean(savedResult?.pdfPath),
+          pdf_path: savedResult?.pdfPath,
         },
       }));
     } catch (err: any) {
@@ -267,11 +376,112 @@ export async function handleApiRequest(
     return true;
   }
 
-  // GET /api/canvas/proxy-download?url=...&filename=...
+  // GET /api/canvas/courses/:id/readings-catalog
+  const readingsCatalogMatch = pathname.match(/^\/api\/canvas\/courses\/(\d+)\/readings-catalog$/);
+  if (readingsCatalogMatch && req.method === "GET") {
+    const courseId = Number(readingsCatalogMatch[1]);
+    let catalog: any[] = [];
+
+    if (activeCanvasClient) {
+      try {
+        catalog = await activeCanvasClient.getCourseReadingsCatalog(courseId);
+      } catch (err: any) {
+        console.warn(`[ReadingsCatalog] Fallo al consultar catálogo en línea para curso ${courseId}:`, err.message);
+      }
+    }
+
+    // Fallback: Si no hay catálogo en línea, generar la estructura base de 16 lecturas (4 módulos x 4 lecturas)
+    if (!catalog || catalog.length === 0) {
+      catalog = [];
+      let globalIdx = 1;
+      for (let m = 1; m <= 4; m++) {
+        for (let l = 1; l <= 4; l++) {
+          catalog.push({
+            moduleNumber: m,
+            readingNumber: l,
+            globalIndex: globalIdx++,
+            title: `Módulo ${m} - Lectura ${l}`,
+            url: "",
+          });
+        }
+      }
+    }
+
+    // Enriquecer cada ítem con información de archivos locales persistidos en disco
+    const enrichedCatalog = catalog.map((item) => {
+      const localFiles = storageManager.findLocalReadingFiles(courseId, item.moduleNumber, item.readingNumber);
+      const hasLocalPdf = Boolean(localFiles?.hasPdf && localFiles?.pdfPath);
+      const hasLocalMd = Boolean(localFiles?.hasMd && localFiles?.mdPath);
+      const pdfFilename = localFiles?.pdfPath ? path.basename(localFiles.pdfPath) : undefined;
+      const localPdfUrl = pdfFilename
+        ? `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}&inline=true`
+        : undefined;
+
+      const title = (localFiles?.title && !localFiles.title.startsWith("Módulo") && !localFiles.title.startsWith("Modulo"))
+        ? localFiles.title
+        : item.title;
+
+      return {
+        ...item,
+        title,
+        has_local_pdf: hasLocalPdf,
+        has_local_md: hasLocalMd,
+        local_pdf_path: localFiles?.pdfPath,
+        local_pdf_url: localPdfUrl,
+        local_md_path: localFiles?.mdPath,
+      };
+    });
+
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: true, data: enrichedCatalog }));
+    return true;
+  }
+
+  // GET /api/canvas/proxy-download?url=...&filename=...&course_id=...&course_name=...
   if (pathname === "/api/canvas/proxy-download" && req.method === "GET") {
     const targetUrl = reqUrl.searchParams.get("url");
     const filename = reqUrl.searchParams.get("filename") || "archivo_canvas.pdf";
+    const courseIdParam = reqUrl.searchParams.get("course_id");
+    const courseNameParam = reqUrl.searchParams.get("course_name") || "";
+    const courseId = courseIdParam ? Number(courseIdParam) : undefined;
 
+    // 1. Comprobar si el archivo ya existe localmente en la carpeta de la materia o en data/courses
+    let localFilePath: string | null = null;
+    if (courseId) {
+      localFilePath = storageManager.findLocalCourseFile(courseId, filename);
+    }
+    if (!localFilePath) {
+      localFilePath = storageManager.findAnyLocalFile(filename);
+    }
+
+    if (localFilePath && fs.existsSync(localFilePath)) {
+      try {
+        const stat = fs.statSync(localFilePath);
+        const ext = path.extname(localFilePath).toLowerCase();
+        const contentType = ext === ".pdf" 
+          ? "application/pdf" 
+          : ext === ".md" 
+            ? "text/markdown; charset=utf-8" 
+            : "application/octet-stream";
+
+        const isInline = reqUrl.searchParams.get("inline") === "true";
+        const dispositionType = isInline ? "inline" : "attachment";
+
+        res.writeHead(200, {
+          "Content-Type": contentType,
+          "Content-Disposition": `${dispositionType}; filename="${encodeURIComponent(path.basename(localFilePath))}"`,
+          "Content-Length": String(stat.size),
+        });
+
+        const readStream = fs.createReadStream(localFilePath);
+        readStream.pipe(res);
+        return true;
+      } catch (streamErr: any) {
+        console.warn("[Storage] Error al servir archivo local:", streamErr);
+      }
+    }
+
+    // 2. Si no existe en disco, se requiere url para descargarlo de Canvas
     if (!targetUrl) {
       res.writeHead(400);
       res.end(JSON.stringify({ ok: false, error: "url es requerido" }));
@@ -302,23 +512,75 @@ export async function handleApiRequest(
       }
 
       const contentType = response.headers.get("content-type") || "application/octet-stream";
-      const contentLength = response.headers.get("content-length");
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Guardar en la carpeta de la materia si se dispone de courseId
+      if (courseId) {
+        try {
+          storageManager.saveCourseFile(courseId, filename, buffer, courseNameParam);
+        } catch (saveErr) {
+          console.warn("[Storage] Error al guardar archivo descargado en materia:", saveErr);
+        }
+      }
+
+      const isInline = reqUrl.searchParams.get("inline") === "true";
+      const dispositionType = isInline ? "inline" : "attachment";
 
       const resHeaders: Record<string, string> = {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}"`,
+        "Content-Disposition": `${dispositionType}; filename="${encodeURIComponent(filename)}"`,
+        "Content-Length": String(buffer.length),
       };
-      if (contentLength) {
-        resHeaders["Content-Length"] = contentLength;
-      }
 
       res.writeHead(200, resHeaders);
-      const arrayBuffer = await response.arrayBuffer();
-      res.end(Buffer.from(arrayBuffer));
+      res.end(buffer);
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ ok: false, error: err.message }));
     }
+    return true;
+  }
+
+  // POST /api/storage/open-file (Abre el PDF o archivo local en el visor por defecto del sistema)
+  if (pathname === "/api/storage/open-file" && req.method === "POST") {
+    const body = await parseJsonBody(req);
+    const courseId = body.course_id ? Number(body.course_id) : undefined;
+    const moduleNum = body.module ? Number(body.module) : undefined;
+    const readingNum = body.reading ? Number(body.reading) : undefined;
+    const targetPath = body.path ? String(body.path) : undefined;
+    const filename = body.filename ? String(body.filename) : undefined;
+
+    let opened = false;
+    if (courseId && moduleNum && readingNum) {
+      opened = storageManager.openReadingPdf(courseId, moduleNum, readingNum);
+    } else if (targetPath) {
+      opened = storageManager.openPathInSystem(targetPath);
+    } else if (courseId && filename) {
+      const localFile = storageManager.findLocalCourseFile(courseId, filename);
+      if (localFile) {
+        opened = storageManager.openPathInSystem(localFile);
+      }
+    }
+
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: opened, opened }));
+    return true;
+  }
+
+  // POST /api/storage/open-folder (Abre la carpeta de la materia en el explorador de archivos local)
+  if (pathname === "/api/storage/open-folder" && req.method === "POST") {
+    const body = await parseJsonBody(req);
+    const courseId = Number(body.course_id);
+    const courseName = body.course_name ? String(body.course_name) : undefined;
+    if (!courseId) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ ok: false, error: "course_id es requerido" }));
+      return true;
+    }
+    const opened = storageManager.openCourseFolder(courseId, courseName);
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: opened, opened }));
     return true;
   }
 

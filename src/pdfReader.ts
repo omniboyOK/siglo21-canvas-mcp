@@ -5,6 +5,7 @@ export interface PdfExtractResult {
   info: any;
   text: string;
   charCount: number;
+  buffer?: Buffer;
 }
 
 /**
@@ -46,6 +47,7 @@ export async function extractPdfTextFromBuffer(
     info: data.info,
     text: cleanText,
     charCount: cleanText.length,
+    buffer,
   };
 }
 

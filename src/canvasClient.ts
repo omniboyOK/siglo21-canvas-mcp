@@ -2,6 +2,11 @@ import fs from "fs";
 import path from "path";
 import { cleanHtmlToMarkdown } from "./htmlUtils.js";
 import { downloadAndExtractPdf, isCanvasUrl } from "./pdfReader.js";
+import {
+  getCourseSamCatalog,
+  fetchAndParseSamReading,
+  SamReadingItem,
+} from "./samReader.js";
 
 export interface CanvasClientConfig {
   baseUrl: string;
@@ -193,6 +198,11 @@ export class CanvasClient {
 
   public async getSelf() {
     const { data } = await this.request("users/self");
+    return data;
+  }
+
+  public async getCourse(courseId: number): Promise<any> {
+    const { data } = await this.request(`courses/${courseId}`);
     return data;
   }
 
@@ -429,7 +439,46 @@ export class CanvasClient {
     };
   }
 
+  /**
+   * Obtiene el catálogo de las 16 lecturas oficiales SAM (meca.ues21.edu.ar)
+   * parseando la página de módulos o portada del curso.
+   */
+  public async getCourseReadingsCatalog(courseId: number): Promise<SamReadingItem[]> {
+    return getCourseSamCatalog(courseId, (endpoint) => this.request(endpoint));
+  }
+
   public async findReading(courseId: number, moduleNumber: number, readingNumber: number) {
+    // 1. Prioridad 1: Buscar en el catálogo SAM interactivo oficial de Siglo 21
+    try {
+      const samCatalog = await this.getCourseReadingsCatalog(courseId);
+      const samItem = samCatalog.find(
+        (it) => it.moduleNumber === moduleNumber && it.readingNumber === readingNumber
+      );
+      if (samItem) {
+        let extractedMarkdown = "";
+        try {
+          const parsed = await fetchAndParseSamReading(samItem.url);
+          extractedMarkdown = parsed.markdown;
+        } catch {
+          // Si falla la extracción web, continuamos con metadatos del ítem
+        }
+
+        return {
+          module_name: `Módulo ${moduleNumber}`,
+          item_title: samItem.title || `Lectura ${readingNumber}`,
+          type: "SAM",
+          url: samItem.url,
+          download_url: undefined,
+          file_id: undefined,
+          description_markdown: extractedMarkdown,
+          source: "sam",
+        };
+      }
+    } catch {
+      // Fallback a módulos tradicionales de Canvas
+    }
+
+    // 2. Prioridad 2: Buscar en módulos nativos de Canvas (archivos / lecturas directas)
     let modules: any[] = [];
     try {
       modules = await this.getAllPages(`courses/${courseId}/modules?include[]=items&per_page=100`);
@@ -450,14 +499,15 @@ export class CanvasClient {
 
       if (targetMod) {
         const items = targetMod.items || [];
+        // Corrección crítica: Solo hacer match si el ítem refiere explícitamente a esta lectura específica
         const targetItem = items.find((it: any) => {
           const title = (it.title || "").toLowerCase();
           return (
             title.includes(`lectura ${readingNumber}`) ||
-            title.includes(`l${readingNumber}`) ||
             title.includes(`lectura_${readingNumber}`) ||
-            title.includes(`actividad ${readingNumber}`) ||
-            title.includes(`actividad práctica - m${moduleNumber}`)
+            title.includes(`l${readingNumber} `) ||
+            title.endsWith(`l${readingNumber}`) ||
+            title.includes(`actividad ${readingNumber}`)
           );
         });
 
@@ -483,34 +533,38 @@ export class CanvasClient {
       }
     }
 
-    let assignments: any[] = [];
-    try {
-      assignments = await this.getAllPages(`courses/${courseId}/assignments?per_page=100`);
-    } catch {
-      assignments = [];
-    }
-    if (Array.isArray(assignments)) {
-      const targetAssignment = assignments.find((a: any) => {
-        const name = (a.name || "").toLowerCase();
-        return (
-          name.includes(`tp${moduleNumber}`) ||
-          name.includes(`tp ${moduleNumber}`) ||
-          name.includes(`trabajo práctico ${moduleNumber}`) ||
-          name.includes(`m${moduleNumber}`)
-        );
-      });
+    // 3. Prioridad 3: Tarea / Trabajo Práctico del módulo
+    // Solo como fallback si se solicitó la Lectura 1 para no duplicar el mismo TP en las lecturas 2, 3 y 4
+    if (readingNumber === 1) {
+      let assignments: any[] = [];
+      try {
+        assignments = await this.getAllPages(`courses/${courseId}/assignments?per_page=100`);
+      } catch {
+        assignments = [];
+      }
+      if (Array.isArray(assignments)) {
+        const targetAssignment = assignments.find((a: any) => {
+          const name = (a.name || "").toLowerCase();
+          return (
+            name.includes(`tp${moduleNumber}`) ||
+            name.includes(`tp ${moduleNumber}`) ||
+            name.includes(`trabajo práctico ${moduleNumber}`) ||
+            name.includes(`m${moduleNumber}`)
+          );
+        });
 
-      if (targetAssignment) {
-        const desc = targetAssignment.description || "";
-        const fileMatch = desc.match(/(?:href|src)=["']([^"']*?\/files\/(\d+)(?:\/download|\/preview)?[^"']*)["']/i);
-        return {
-          module_name: `Módulo ${moduleNumber}`,
-          item_title: targetAssignment.name,
-          type: "Assignment",
-          file_id: fileMatch ? Number(fileMatch[2]) : undefined,
-          download_url: fileMatch ? fileMatch[1].replace(/&amp;/g, "&") : undefined,
-          description_markdown: cleanHtmlToMarkdown(desc),
-        };
+        if (targetAssignment) {
+          const desc = targetAssignment.description || "";
+          const fileMatch = desc.match(/(?:href|src)=["']([^"']*?\/files\/(\d+)(?:\/download|\/preview)?[^"']*)["']/i);
+          return {
+            module_name: `Módulo ${moduleNumber}`,
+            item_title: targetAssignment.name,
+            type: "Assignment",
+            file_id: fileMatch ? Number(fileMatch[2]) : undefined,
+            download_url: fileMatch ? fileMatch[1].replace(/&amp;/g, "&") : undefined,
+            description_markdown: cleanHtmlToMarkdown(desc),
+          };
+        }
       }
     }
 
@@ -810,8 +864,8 @@ Entrega un informe estructurado con:
         } else if (filePath.toLowerCase().endsWith(".pdf")) {
           // Búsqueda en PDF local
           const dataBuffer = fs.readFileSync(filePath);
-          const pdfParse = (await import("pdf-parse")).default;
-          const pdfData = await pdfParse(dataBuffer, { max: 10 });
+          const { extractPdfTextFromBuffer } = await import("./pdfReader.js");
+          const pdfData = await extractPdfTextFromBuffer(dataBuffer, 10);
           const normContent = pdfData.text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
           const matchIdx = normContent.indexOf(normalizedQuery);
           if (matchIdx !== -1) {

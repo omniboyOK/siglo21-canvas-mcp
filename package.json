@@ -1,6 +1,6 @@
 {
   "name": "s21-canvas-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Servidor MCP para interactuar con Canvas LMS de Universidad Siglo 21 y extraer contenido de lecturas/PDFs",
   "type": "module",
   "main": "dist/index.js",

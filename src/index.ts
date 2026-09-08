@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+
+// En MCP sobre stdio, stdout es exclusivo de JSON-RPC. Redirigimos console.log a stderr
+// para que advertencias de librerías externas (ej: pdf-parse / pdf.js) no corrompan el canal.
+console.log = console.error;
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -10,13 +15,46 @@ import { buildQuizPrompt } from "./quizGenerator.js";
 import { startInteractiveGuideServer } from "./interactiveGuide.js";
 import { startExamSimulatorServer } from "./examSimulatorServer.js";
 import { ExamRepository } from "./db/examRepository.js";
+import * as storageManager from "./storageManager.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-// Configuración desde entorno
-const CANVAS_URL = (process.env.CANVAS_URL || "https://siglo21.instructure.com").replace(/\/+$/, "");
-const CANVAS_TOKEN = process.env.CANVAS_TOKEN || "";
+function resolveCanvasCredentials() {
+  let url = (process.env.CANVAS_URL || "https://siglo21.instructure.com").replace(/\/+$/, "");
+  let token = process.env.CANVAS_TOKEN || "";
+
+  if (!token) {
+    const candidatePaths = [
+      path.join(os.homedir(), ".gemini", "config", "mcp_config.json"),
+      path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json"),
+      path.join(os.homedir(), ".gemini", "antigravity-ide", "mcp_config.json"),
+    ];
+
+    for (const configPath of candidatePaths) {
+      if (token) break;
+      try {
+        if (fs.existsSync(configPath)) {
+          const raw = fs.readFileSync(configPath, "utf-8");
+          const parsed = JSON.parse(raw);
+          const serverConfig = parsed?.mcpServers?.["s21-canvas-mcp"] || parsed?.mcpServers?.["siglo21"];
+          if (serverConfig?.env?.CANVAS_TOKEN) {
+            token = serverConfig.env.CANVAS_TOKEN;
+          }
+          if (serverConfig?.env?.CANVAS_URL) {
+            url = serverConfig.env.CANVAS_URL.replace(/\/+$/, "");
+          }
+        }
+      } catch {}
+    }
+  }
+  return { url, token };
+}
+
+const { url: CANVAS_URL, token: CANVAS_TOKEN } = resolveCanvasCredentials();
 
 if (!CANVAS_TOKEN) {
-  console.error("⚠️ Advertencia: CANVAS_TOKEN no está definido en las variables de entorno.");
+  console.error("⚠️ Advertencia: CANVAS_TOKEN no está definido en las variables de entorno ni en mcp_config.json.");
 }
 
 const client = new CanvasClient({
@@ -728,6 +766,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error("course_id, module_number y reading_number son requeridos");
         }
 
+        // 1. Revisar si ya existe en almacenamiento local (Offline-First)
+        const local = storageManager.getReading(courseId, moduleNumber, readingNumber);
+        if (local) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `=== Lectura Guardada en Disco (Offline-First) ===\nMateria ID: ${courseId}\nMódulo: ${moduleNumber}\nLectura: ${readingNumber}\nTítulo: ${local.title}\nArchivo MD: ${local.mdPath}${local.pdfPath ? `\nArchivo PDF: ${local.pdfPath}` : ""}\n\n${local.markdown}`,
+              },
+            ],
+          };
+        }
+
         const readingInfo = await client.findReading(courseId, moduleNumber, readingNumber);
 
         if (!readingInfo) {
@@ -742,6 +793,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         let pdfContentText = "";
+        let pdfExtract: any = null;
         if (autoReadPdf && (readingInfo.download_url || readingInfo.file_id)) {
           try {
             let dlUrl = readingInfo.download_url;
@@ -750,11 +802,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               dlUrl = fInfo.url || fInfo.download_url;
             }
             if (dlUrl) {
-              const extract = await client.downloadPdf(dlUrl, 15);
-              pdfContentText = `\n\n--- Texto Extraído del PDF (${extract.numPages} págs) ---\n${extract.text}`;
+              pdfExtract = await client.downloadPdf(dlUrl, 30);
+              pdfContentText = `\n\n--- Texto Extraído del PDF (${pdfExtract.numPages} págs) ---\n${pdfExtract.text}`;
             }
           } catch (e: any) {
             pdfContentText = `\n\n(No se pudo extraer el texto del PDF automáticamente: ${e.message})`;
+          }
+        }
+
+        // Guardar automáticamente en disco para futuras consultas
+        const contentToSave = pdfExtract?.text || readingInfo.description_markdown || "";
+        if (contentToSave) {
+          try {
+            let courseName: string | undefined;
+            try {
+              const c = await client.getCourse(courseId);
+              if (c?.name) courseName = c.name;
+            } catch {}
+            storageManager.saveReading(
+              courseId,
+              moduleNumber,
+              readingNumber,
+              readingInfo.item_title || `Lectura ${readingNumber}`,
+              contentToSave,
+              pdfExtract?.buffer,
+              courseName
+            );
+          } catch (err) {
+            console.error("[Storage] Error al auto-guardar lectura en MCP:", err);
           }
         }
 

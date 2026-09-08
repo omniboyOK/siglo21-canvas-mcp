@@ -143,4 +143,28 @@ describe("Micro-Router REST API (/api/*)", () => {
     const json = (await res.json()) as any;
     assert.ok(typeof json.ok === "boolean");
   });
+
+  it("POST /api/storage/open-folder debe validar course_id obligatorio", async () => {
+    const res = await fetch(`${baseUrl}/api/storage/open-folder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.strictEqual(res.status, 400);
+    const json = (await res.json()) as any;
+    assert.strictEqual(json.ok, false);
+    assert.match(json.error, /course_id es requerido/);
+  });
+
+  it("GET /api/canvas/courses/9999/readings-catalog debe devolver ranuras enriquecidas", async () => {
+    const res = await fetch(`${baseUrl}/api/canvas/courses/9999/readings-catalog`);
+    assert.strictEqual(res.status, 200);
+    const json = (await res.json()) as any;
+    assert.strictEqual(json.ok, true);
+    assert.ok(Array.isArray(json.data));
+    assert.strictEqual(json.data.length, 16);
+    assert.ok("has_local_pdf" in json.data[0]);
+    assert.ok("has_local_md" in json.data[0]);
+  });
 });
+
