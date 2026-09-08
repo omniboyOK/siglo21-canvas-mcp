@@ -1,48 +1,30 @@
+/**
+ * Enrutador REST API para el Portal Siglo 21 (/api/*).
+ *
+ * Utiliza los servicios modulares de Canvas y Storage.
+ */
+
 import http from "node:http";
-import { URL } from "node:url";
-import { ExamRepository } from "../db/examRepository.js";
-import { TOOLS_CATALOG } from "../toolsCatalog.js";
-import { CanvasClient } from "../canvasClient.js";
-import { downloadAndExtractPdf, isCanvasUrl } from "../pdfReader.js";
-import * as storageManager from "../storageManager.js";
-
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { URL } from "node:url";
 
-function resolveCanvasCredentials() {
-  let url = (process.env.CANVAS_URL || "https://siglo21.instructure.com").replace(/\/+$/, "");
-  let token = process.env.CANVAS_TOKEN || "";
-
-  if (!token) {
-    const candidatePaths = [
-      path.join(os.homedir(), ".gemini", "config", "mcp_config.json"),
-      path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json"),
-      path.join(os.homedir(), ".gemini", "antigravity-ide", "mcp_config.json"),
-    ];
-
-    for (const configPath of candidatePaths) {
-      if (token) break;
-      try {
-        if (fs.existsSync(configPath)) {
-          const raw = fs.readFileSync(configPath, "utf-8");
-          const parsed = JSON.parse(raw);
-          const serverConfig = parsed?.mcpServers?.["s21-canvas-mcp"] || parsed?.mcpServers?.["siglo21"];
-          if (serverConfig?.env?.CANVAS_TOKEN) {
-            token = serverConfig.env.CANVAS_TOKEN;
-            console.warn(`[S21 Portal] Aviso: CANVAS_TOKEN cargado desde ${configPath}`);
-          }
-          if (serverConfig?.env?.CANVAS_URL) {
-            url = serverConfig.env.CANVAS_URL.replace(/\/+$/, "");
-          }
-        }
-      } catch {
-        // Ignorar fallo de lectura de config
-      }
-    }
-  }
-  return { url, token };
-}
+import { resolveCanvasCredentials } from "../config/credentials.js";
+import { CanvasClient } from "../canvas/client.js";
+import { getSelf, getCourses, getPendingTasks, getCourse } from "../canvas/courses.service.js";
+import {
+  getModules,
+  getAssignments,
+  getFileInfo,
+  findReading,
+  getCourseReadingsCatalog,
+} from "../canvas/content.service.js";
+import { getUnifiedUpcomingEvents } from "../canvas/events.service.js";
+import { getStudentDashboard } from "../canvas/dashboard.service.js";
+import { downloadAndExtractPdf, isCanvasUrl } from "../content/pdf.js";
+import * as storageManager from "../storage/manager.js";
+import { ExamRepository } from "../db/examRepository.js";
+import { TOOLS_CATALOG } from "../tools/catalog.js";
 
 const creds = resolveCanvasCredentials();
 const CANVAS_URL = creds.url;
@@ -77,7 +59,7 @@ export async function handleApiRequest(
       return true;
     }
     try {
-      const profile = await activeCanvasClient.getSelf();
+      const profile = await getSelf(activeCanvasClient);
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, data: profile }));
     } catch (err: any) {
@@ -97,7 +79,7 @@ export async function handleApiRequest(
     try {
       const includeConcluded = reqUrl.searchParams.get("include_concluded") === "true";
       const search = reqUrl.searchParams.get("search") || undefined;
-      const courses = await activeCanvasClient.getCourses({ includeConcluded, search, compact: true });
+      const courses = await getCourses(activeCanvasClient, { includeConcluded, search, compact: true });
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, data: courses }));
     } catch (err: any) {
@@ -115,10 +97,10 @@ export async function handleApiRequest(
       return true;
     }
     try {
-      const dashboard = await activeCanvasClient.getStudentDashboard();
+      const dashboard = await getStudentDashboard(activeCanvasClient);
       let pendingTasks: any[] = [];
       try {
-        pendingTasks = await activeCanvasClient.getPendingTasks();
+        pendingTasks = await getPendingTasks(activeCanvasClient);
       } catch {
         // Silencioso si falla pending tasks
       }
@@ -151,7 +133,7 @@ export async function handleApiRequest(
       return true;
     }
     try {
-      const events = await activeCanvasClient.getUnifiedUpcomingEvents();
+      const events = await getUnifiedUpcomingEvents(activeCanvasClient);
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, data: events }));
     } catch (err: any) {
@@ -169,7 +151,7 @@ export async function handleApiRequest(
       return true;
     }
     try {
-      const tasks = await activeCanvasClient.getPendingTasks();
+      const tasks = await getPendingTasks(activeCanvasClient);
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, data: tasks }));
     } catch (err: any) {
@@ -189,7 +171,7 @@ export async function handleApiRequest(
     }
     try {
       const courseId = Number(modulesMatch[1]);
-      const modules = await activeCanvasClient.getModules(courseId, true);
+      const modules = await getModules(activeCanvasClient, courseId, true);
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, data: modules }));
     } catch (err: any) {
@@ -209,7 +191,7 @@ export async function handleApiRequest(
     }
     try {
       const courseId = Number(assignmentsMatch[1]);
-      const assignments = await activeCanvasClient.getAssignments(courseId, true);
+      const assignments = await getAssignments(activeCanvasClient, courseId, true);
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, data: assignments }));
     } catch (err: any) {
@@ -277,7 +259,7 @@ export async function handleApiRequest(
       let pdfBuffer: Buffer | undefined;
 
       if (fileIdParam) {
-        const fileInfo = await activeCanvasClient.getFileInfo(Number(fileIdParam));
+        const fileInfo = await getFileInfo(activeCanvasClient, Number(fileIdParam));
         title = fileInfo.display_name || fileInfo.filename || title;
         downloadUrl = fileInfo.url || fileInfo.download_url;
         if (downloadUrl) {
@@ -287,7 +269,7 @@ export async function handleApiRequest(
           pdfBuffer = ext.buffer;
         }
       } else {
-        const readingInfo = await activeCanvasClient.findReading(courseId, moduleNum, readingNum);
+        const readingInfo = await findReading(activeCanvasClient, courseId, moduleNum, readingNum);
         if (readingInfo) {
           title = readingInfo.item_title || title;
           onlineUrl = readingInfo.url || "";
@@ -295,7 +277,7 @@ export async function handleApiRequest(
 
           let dlUrl = readingInfo.download_url;
           if (!dlUrl && readingInfo.file_id) {
-            const fInfo = await activeCanvasClient.getFileInfo(readingInfo.file_id);
+            const fInfo = await getFileInfo(activeCanvasClient, readingInfo.file_id);
             dlUrl = fInfo.url || fInfo.download_url;
           }
           downloadUrl = dlUrl || "";
@@ -318,7 +300,7 @@ export async function handleApiRequest(
       let resolvedCourseName = courseNameParam;
       if (!resolvedCourseName && activeCanvasClient) {
         try {
-          const cInfo = await activeCanvasClient.getCourse(courseId);
+          const cInfo = await getCourse(activeCanvasClient, courseId);
           if (cInfo?.name) resolvedCourseName = cInfo.name;
         } catch {}
       }
@@ -384,7 +366,7 @@ export async function handleApiRequest(
 
     if (activeCanvasClient) {
       try {
-        catalog = await activeCanvasClient.getCourseReadingsCatalog(courseId);
+        catalog = await getCourseReadingsCatalog(activeCanvasClient, courseId);
       } catch (err: any) {
         console.warn(`[ReadingsCatalog] Fallo al consultar catálogo en línea para curso ${courseId}:`, err.message);
       }
@@ -779,4 +761,3 @@ function parseJsonBody(req: http.IncomingMessage): Promise<any> {
     req.on("error", () => resolve({}));
   });
 }
-
