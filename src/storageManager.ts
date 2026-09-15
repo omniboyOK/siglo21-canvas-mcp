@@ -14,6 +14,7 @@ export {
   openCourseFolder,
   openReadingPdf,
   saveReading,
+  saveReadingPdfFile,
   saveCourseFile,
   findLocalCourseFile,
   findAnyLocalFile,

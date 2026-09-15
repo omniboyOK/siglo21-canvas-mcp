@@ -45,6 +45,13 @@ export const GetReadingSchema = z.object({
   auto_read_pdf: z.boolean().optional(),
 });
 
+export const GetReadingPdfSchema = z.object({
+  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
+  module_number: z.coerce.number({ required_error: "module_number es requerido" }),
+  reading_number: z.coerce.number({ required_error: "reading_number es requerido" }),
+  output_dir: z.string().optional(),
+});
+
 export const GenerateQuizSchema = z.object({
   course_id: z.coerce.number({ required_error: "course_id es requerido" }),
   module_number: z.coerce.number({ required_error: "module_number es requerido" }),

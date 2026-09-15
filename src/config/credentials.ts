@@ -12,7 +12,9 @@ import path from "node:path";
 
 export interface CanvasCredentials {
   url: string;
-  token: string;
+  token?: string;
+  sessionCookie?: string;
+  csrfToken?: string;
 }
 
 export function resolveCanvasCredentials(): CanvasCredentials {
@@ -20,8 +22,11 @@ export function resolveCanvasCredentials(): CanvasCredentials {
     process.env.CANVAS_URL || "https://siglo21.instructure.com"
   ).replace(/\/+$/, "");
   let token = process.env.CANVAS_TOKEN || "";
+  let sessionCookie =
+    process.env.CANVAS_SESSION || process.env.CANVAS_COOKIE || "";
+  let csrfToken = process.env.CANVAS_CSRF_TOKEN || "";
 
-  if (!token) {
+  if (!token && !sessionCookie) {
     const candidatePaths = [
       path.join(os.homedir(), ".gemini", "config", "mcp_config.json"),
       path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json"),
@@ -34,7 +39,7 @@ export function resolveCanvasCredentials(): CanvasCredentials {
     ];
 
     for (const configPath of candidatePaths) {
-      if (token) break;
+      if (token || sessionCookie) break;
       try {
         if (fs.existsSync(configPath)) {
           const raw = fs.readFileSync(configPath, "utf-8");
@@ -44,6 +49,14 @@ export function resolveCanvasCredentials(): CanvasCredentials {
             parsed?.mcpServers?.["siglo21"];
           if (serverConfig?.env?.CANVAS_TOKEN) {
             token = serverConfig.env.CANVAS_TOKEN;
+          }
+          if (serverConfig?.env?.CANVAS_SESSION) {
+            sessionCookie = serverConfig.env.CANVAS_SESSION;
+          } else if (serverConfig?.env?.CANVAS_COOKIE) {
+            sessionCookie = serverConfig.env.CANVAS_COOKIE;
+          }
+          if (serverConfig?.env?.CANVAS_CSRF_TOKEN) {
+            csrfToken = serverConfig.env.CANVAS_CSRF_TOKEN;
           }
           if (serverConfig?.env?.CANVAS_URL) {
             url = serverConfig.env.CANVAS_URL.replace(/\/+$/, "");
@@ -55,5 +68,5 @@ export function resolveCanvasCredentials(): CanvasCredentials {
     }
   }
 
-  return { url, token };
+  return { url, token, sessionCookie, csrfToken };
 }

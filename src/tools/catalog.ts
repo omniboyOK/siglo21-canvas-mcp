@@ -127,6 +127,17 @@ export const TOOLS_CATALOG: ToolStudentDoc[] = [
     parametersHint: "ID de materia, Módulo (1-4), Lectura (1-4)",
   },
   {
+    id: "s21_get_reading_pdf",
+    name: "Descargador de Lecturas en PDF Original",
+    category: "lecturas",
+    categoryLabel: "Lecturas y PDFs",
+    tagColor: "teal",
+    summary: "Descarga y guarda en disco el archivo PDF original completo de cualquier lectura SAM o Canvas sin convertirlo a texto.",
+    benefit: "Conserva el documento oficial tal como fue publicado para leer offline, imprimir o archivar en tu disco.",
+    examplePrompt: "Descargame el PDF original de la Lectura 1 del Módulo 1 de Bases de Datos (course_id: 46467).",
+    parametersHint: "course_id, module_number (1-4), reading_number (1-4), output_dir (opcional)",
+  },
+  {
     id: "s21_read_pdf_content",
     name: "Lector Inteligente de Documentos PDF",
     category: "lecturas",

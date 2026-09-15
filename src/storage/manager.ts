@@ -288,6 +288,33 @@ export function saveReading(
 }
 
 /**
+ * Guarda exclusivamente el PDF binario de una lectura en disco.
+ * Si customOutputDir está definido, guarda allí; de lo contrario, en la carpeta de la materia.
+ */
+export function saveReadingPdfFile(
+  courseId: number,
+  moduleNum: number,
+  readingNum: number,
+  title: string,
+  pdfBuffer: Buffer | Uint8Array,
+  courseName?: string,
+  customOutputDir?: string
+): string {
+  const targetDir = customOutputDir
+    ? path.resolve(customOutputDir)
+    : getCourseDir(courseId, courseName);
+
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  const baseName = getReadingBaseName(moduleNum, readingNum, title);
+  const targetPath = path.join(targetDir, `${baseName}.pdf`);
+  fs.writeFileSync(targetPath, Buffer.from(pdfBuffer));
+  return targetPath;
+}
+
+/**
  * Guarda un archivo genérico (ej: PDF de tarea, apunte descargado) en la carpeta de la materia.
  */
 export function saveCourseFile(

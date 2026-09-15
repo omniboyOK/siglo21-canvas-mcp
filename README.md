@@ -132,15 +132,37 @@ Archivo: `~/.codex/config.json`
 
 ---
 
-## Obtencion del Token de Canvas
+## Autenticación (Token de API o Cookie de Sesión)
+
+El servidor soporta dos métodos de autenticación:
+
+### Método A: Token de Acceso Personal (`CANVAS_TOKEN`)
+*(Recomendado si tu cuenta tiene la opción disponible)*
 
 1. Inicie sesión en [Canvas Siglo 21](https://siglo21.instructure.com).
-2. Diríjase a [Cuenta](https://siglo21.instructure.com/profile/settings).
+2. Diríjase a [Cuenta > Configuración](https://siglo21.instructure.com/profile/settings).
 3. Desplácese hasta la sección **Tokens de acceso aprobados** y seleccione **+ Nuevo token de acceso**.
-4. Asigne un nombre identificador (por ejemplo, `MCP-Agent`) y seleccione **Generar token**.
-5. Copie el token generado y asígnelo al parámetro `CANVAS_TOKEN` en la configuración correspondiente.
+4. Ingrese un nombre identificador (ej: `MCP-Agent`) y seleccione **Generar token**.
+5. Copie el token generado y configúrelo en `CANVAS_TOKEN`.
 
-IMPORTANTE: No darle los permisos del token a nadie, ya que permite el acceso a toda tu información académica. En caso de hacerlo revocarlo desde la misma sección.
+### Método B: Cookie de Sesión Web (`CANVAS_SESSION` / `CANVAS_COOKIE`)
+*(Ideal si la Universidad Siglo 21 tiene bloqueada la generación de tokens para alumnos)*
+
+Si el botón de nuevo token no aparece o está inhabilitado, puedes autenticarte con tu sesión activa del navegador:
+
+1. Inicie sesión en [Canvas Siglo 21](https://siglo21.instructure.com) en su navegador (Chrome, Edge o Firefox).
+2. Abra las Herramientas de Desarrollador (**F12** o clic derecho > *Inspeccionar*).
+3. Diríjase a la pestaña **Application** (o *Almacenamiento*):
+   - En la barra lateral izquierda, expanda **Cookies** y seleccione `https://siglo21.instructure.com`.
+   - Copie el valor de la cookie **`canvas_session`**.
+   - *(Opcional)* Copie también el valor de **`_csrf_token`**.
+4. También puede copiar toda la cabecera `Cookie:` desde la pestaña **Network** (Headers > Request Headers > Cookie).
+5. Asigne los valores en su configuración:
+   - `CANVAS_SESSION` o `CANVAS_COOKIE`: el valor de `canvas_session` o la cadena completa de cookies.
+   - `CANVAS_CSRF_TOKEN`: el valor de `_csrf_token`.
+
+> [!WARNING]
+> **Seguridad**: No comparta sus credenciales ni cookies con nadie, ya que otorgan acceso a su información académica. Las cookies de sesión expiran periódicamente según las políticas del navegador y la universidad, por lo que si el servidor devuelve error de autenticación en el futuro, solo deberá renovar la cookie en su archivo de configuración.
 
 ---
 

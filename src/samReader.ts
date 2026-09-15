@@ -6,6 +6,9 @@ export {
   extractSamCatalog,
   getCourseSamCatalog,
   fetchAndParseSamReading,
+  fetchSamReadingPdf,
+  getSamBaseUrl,
   type SamReadingItem,
   type SamReadingContent,
+  type SamPdfResult,
 } from "./content/sam.js";

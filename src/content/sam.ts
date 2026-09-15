@@ -296,3 +296,240 @@ export async function fetchAndParseSamReading(rawUrl: string): Promise<SamReadin
   contentCache.set(cleanUrl, { content: result, timestamp: now });
   return result;
 }
+
+export interface SamPdfResult {
+  buffer: Buffer;
+  filename: string;
+  downloadUrl: string;
+  title: string;
+}
+
+const BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/**
+ * Resuelve la URL base de un paquete SAM eliminando index.html o parámetros.
+ */
+export function getSamBaseUrl(url: string): string {
+  const clean = url.split("#")[0].split("?")[0].trim();
+  if (/\/[^/]+\.[a-zA-Z0-9]+$/.test(clean)) {
+    return clean.substring(0, clean.lastIndexOf("/"));
+  }
+  return clean.replace(/\/+$/, "");
+}
+
+/**
+ * Descarga y extrae el archivo PDF original de una lectura SAM (meca.ues21.edu.ar).
+ * Soporta tanto paquetes interactivos Articulate Rise 360 (en HTML o locales/en.js)
+ * como páginas HTML tradicionales con enlaces directos a PDF.
+ */
+export async function fetchSamReadingPdf(rawUrl: string): Promise<SamPdfResult> {
+  const cleanUrl = rawUrl.split("#")[0].trim();
+  const baseUrl = getSamBaseUrl(cleanUrl);
+
+  const res = await fetch(cleanUrl, {
+    headers: {
+      "User-Agent": BROWSER_USER_AGENT,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Error al conectar con SAM (HTTP ${res.status}): ${res.statusText}`);
+  }
+
+  const html = await res.text();
+
+  // 1. Intentar localizar curso Articulate Rise 360 en scripts HTML o en locales/en.js
+  let courseObj: any = null;
+
+  // Buscar Base64 en scripts de index.html
+  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
+  for (const s of scripts) {
+    const sText = s[1];
+    const b64Match = sText.match(/["']([A-Za-z0-9+/=]{2000,})["']/);
+    if (b64Match) {
+      try {
+        const decoded = Buffer.from(b64Match[1], "base64").toString("utf-8");
+        if (decoded.includes('"lessons"') || decoded.includes('"course"')) {
+          const json = JSON.parse(decoded);
+          courseObj = json.course || json;
+          break;
+        }
+      } catch {
+        // continuar
+      }
+    }
+  }
+
+  // Si no se encontró en HTML, intentar en locales/en.js
+  if (!courseObj) {
+    try {
+      const enRes = await fetch(`${baseUrl}/locales/en.js`, {
+        headers: {
+          "User-Agent": BROWSER_USER_AGENT,
+          Accept: "*/*",
+        },
+      });
+      if (enRes.ok) {
+        const enText = await enRes.text();
+        const b64Match = enText.match(/["']([A-Za-z0-9+/=]{2000,})["']/);
+        if (b64Match) {
+          const decoded = Buffer.from(b64Match[1], "base64").toString("utf-8");
+          const json = JSON.parse(decoded);
+          courseObj = json.course || json;
+        }
+      }
+    } catch {
+      // Ignorar fallo de locales/en.js
+    }
+  }
+
+  // Si se encontró el objeto de curso Rise
+  if (courseObj) {
+    const courseTitle = courseObj.title || "Lectura";
+    const lessons: any[] = courseObj.lessons || [];
+
+    // Ubicar la lección de "Descarga en PDF"
+    let pdfLesson = lessons.find((l: any) =>
+      /descarga\s*(?:en\s*)?pdf/i.test(l.title || "")
+    );
+    if (!pdfLesson) {
+      pdfLesson = lessons.find((l: any) => {
+        const t = (l.title || "").toLowerCase();
+        return t.includes("descarga") && t.includes("pdf");
+      });
+    }
+
+    // Buscar adjunto en la lección de PDF o como fallback en cualquier lección
+    let attachment: any = null;
+
+    const findAttachment = (items: any[]): any => {
+      for (const item of items || []) {
+        if (item.media?.attachment) {
+          return item.media.attachment;
+        }
+        if (Array.isArray(item.items)) {
+          const found = findAttachment(item.items);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    if (pdfLesson) {
+      attachment = findAttachment(pdfLesson.items);
+    }
+
+    // Fallback: si no se encontró en la lección específica, buscar en todas las lecciones
+    if (!attachment) {
+      for (const l of lessons) {
+        attachment = findAttachment(l.items);
+        if (attachment) break;
+      }
+    }
+
+    if (attachment) {
+      // Candidatos de archivo: key, filename, originalUrl
+      const candidates: string[] = [
+        attachment.key,
+        attachment.filename,
+        attachment.originalUrl,
+      ].filter(Boolean);
+
+      const uniqueCandidates = [...new Set(candidates)];
+      for (const cand of uniqueCandidates) {
+        // Rutas candidatas: <baseUrl>/assets/<cand> y <baseUrl>/<cand>
+        const assetUrls = [
+          `${baseUrl}/assets/${cand}`,
+          `${baseUrl}/${cand}`,
+        ];
+
+        for (const assetUrl of assetUrls) {
+          try {
+            const pdfRes = await fetch(assetUrl, {
+              headers: {
+                "User-Agent": BROWSER_USER_AGENT,
+                Accept: "application/pdf,*/*",
+                Referer: cleanUrl,
+              },
+            });
+
+            if (pdfRes.ok) {
+              const arrayBuf = await pdfRes.arrayBuffer();
+              const buffer = Buffer.from(arrayBuf);
+              // Verificar que no sea una página de error vacía o HTML/XML
+              const magic = buffer.subarray(0, 5).toString("ascii");
+              if (
+                magic.startsWith("%PDF") ||
+                (buffer.length > 1000 && !magic.startsWith("<?xml") && !magic.startsWith("<!DOC"))
+              ) {
+                return {
+                  buffer,
+                  filename: attachment.key || attachment.originalUrl || attachment.filename || "lectura.pdf",
+                  downloadUrl: assetUrl,
+                  title: courseTitle,
+                };
+              }
+            }
+          } catch {
+            // Continuar con siguiente candidato
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Si no es Rise o falló la extracción Rise: Buscar en enlaces directos HTML a PDF
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+  const parsedTitle = titleMatch ? titleMatch[1].trim() : "Lectura";
+
+  const pdfLinkMatches = [...html.matchAll(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/gi)];
+  for (const m of pdfLinkMatches) {
+    const rawHref = m[1].trim();
+    let downloadUrl: string;
+    if (rawHref.startsWith("http://") || rawHref.startsWith("https://")) {
+      downloadUrl = rawHref;
+    } else if (rawHref.startsWith("/")) {
+      const origin = new URL(baseUrl).origin;
+      downloadUrl = `${origin}${rawHref}`;
+    } else {
+      // Manejar nombres de archivo con espacios o caracteres especiales
+      downloadUrl = `${baseUrl}/${encodeURI(decodeURI(rawHref))}`;
+    }
+
+    try {
+      const pdfRes = await fetch(downloadUrl, {
+        headers: {
+          "User-Agent": BROWSER_USER_AGENT,
+          Accept: "application/pdf,*/*",
+          Referer: cleanUrl,
+        },
+      });
+
+      if (pdfRes.ok) {
+        const arrayBuf = await pdfRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuf);
+        const magic = buffer.subarray(0, 5).toString("ascii");
+        if (
+          magic.startsWith("%PDF") ||
+          (buffer.length > 1000 && !magic.startsWith("<?xml") && !magic.startsWith("<!DOC"))
+        ) {
+          const rawFilename = decodeURIComponent(rawHref.split("?")[0].split("/").pop() || "lectura.pdf");
+          return {
+            buffer,
+            filename: rawFilename,
+            downloadUrl,
+            title: parsedTitle,
+          };
+        }
+      }
+    } catch {
+      // Continuar con siguiente enlace
+    }
+  }
+
+  throw new Error(
+    `No se pudo localizar ni descargar el archivo PDF original en el paquete SAM (${rawUrl}).`
+  );
+}
