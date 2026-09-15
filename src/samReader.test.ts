@@ -69,4 +69,111 @@ describe("Extractor SAM y Lector de Contenidos (samReader)", () => {
       }
     }
   });
+
+  it("debe resolver correctamente la URL base con getSamBaseUrl", async () => {
+    const { getSamBaseUrl } = await import("./content/sam.js");
+    assert.strictEqual(
+      getSamBaseUrl("https://meca.ues21.edu.ar/canvas/curso/L1/index.html"),
+      "https://meca.ues21.edu.ar/canvas/curso/L1"
+    );
+    assert.strictEqual(
+      getSamBaseUrl("https://meca.ues21.edu.ar/canvas/curso/L1/"),
+      "https://meca.ues21.edu.ar/canvas/curso/L1"
+    );
+    assert.strictEqual(
+      getSamBaseUrl("https://meca.ues21.edu.ar/canvas/curso/L1?token=123#sec1"),
+      "https://meca.ues21.edu.ar/canvas/curso/L1"
+    );
+  });
+
+  it("fetchSamReadingPdf debe extraer y descargar PDF adjunto en paquete Rise", async () => {
+    const http = await import("node:http");
+    const { fetchSamReadingPdf } = await import("./content/sam.js");
+
+    const riseCourse = {
+      title: "Lectura Test Rise",
+      lessons: [
+        {
+          title: "Contenido 1",
+          items: [],
+        },
+        {
+          title: "Descarga en PDF",
+          items: [
+            {
+              media: {
+                attachment: {
+                  key: "test-reading.pdf",
+                  filename: "hash-test-reading.pdf",
+                  originalUrl: "test-reading.pdf",
+                },
+              },
+            },
+          ],
+        },
+      ],
+      _pad: " ".repeat(2500),
+    };
+
+    const validB64 = Buffer.from(JSON.stringify({ course: riseCourse })).toString("base64");
+    const dummyPdf = Buffer.from("%PDF-1.4 simulated pdf binary content %%EOF");
+
+    const server = http.createServer((req, res) => {
+      if (req.url === "/L1/index.html") {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(`<html><body><script>window.courseData = "${validB64}";</script></body></html>`);
+      } else if (req.url?.includes("/assets/test-reading.pdf")) {
+        res.writeHead(200, { "Content-Type": "application/pdf" });
+        res.end(dummyPdf);
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as any).port;
+
+    try {
+      const res = await fetchSamReadingPdf(`http://localhost:${port}/L1/index.html`);
+      assert.strictEqual(res.title, "Lectura Test Rise");
+      assert.strictEqual(res.filename, "test-reading.pdf");
+      assert.ok(res.buffer.toString().startsWith("%PDF"));
+      assert.ok(res.downloadUrl.includes("/assets/test-reading.pdf"));
+    } finally {
+      server.close();
+    }
+  });
+
+  it("fetchSamReadingPdf debe extraer enlace directo a PDF en HTML tradicional", async () => {
+    const http = await import("node:http");
+    const { fetchSamReadingPdf } = await import("./content/sam.js");
+
+    const dummyPdf = Buffer.from("%PDF-1.4 simulated html pdf content %%EOF");
+
+    const server = http.createServer((req, res) => {
+      if (req.url === "/L2/index.html") {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(`<html><head><title>Lectura HTML Test</title></head><body><a href="apunte.pdf">Descargar PDF</a></body></html>`);
+      } else if (req.url?.includes("/apunte.pdf")) {
+        res.writeHead(200, { "Content-Type": "application/pdf" });
+        res.end(dummyPdf);
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as any).port;
+
+    try {
+      const res = await fetchSamReadingPdf(`http://localhost:${port}/L2/index.html`);
+      assert.strictEqual(res.title, "Lectura HTML Test");
+      assert.strictEqual(res.filename, "apunte.pdf");
+      assert.ok(res.buffer.toString().startsWith("%PDF"));
+    } finally {
+      server.close();
+    }
+  });
 });

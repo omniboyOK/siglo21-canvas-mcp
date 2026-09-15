@@ -29,6 +29,7 @@ import { modulesTool } from "./handlers/modules.js";
 import { courseFilesTool } from "./handlers/course-files.js";
 import { pdfReaderTool } from "./handlers/pdf-reader.js";
 import { readingTool } from "./handlers/reading.js";
+import { readingPdfTool } from "./handlers/reading-pdf.js";
 import { quizTool } from "./handlers/quiz.js";
 import { discussionsTool } from "./handlers/discussions.js";
 import { rubricAuditTool } from "./handlers/rubric-audit.js";
@@ -53,6 +54,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   courseFilesTool,
   pdfReaderTool,
   readingTool,
+  readingPdfTool,
   quizTool,
   discussionsTool,
   rubricAuditTool,
