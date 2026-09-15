@@ -30,8 +30,13 @@ const creds = resolveCanvasCredentials();
 const CANVAS_URL = creds.url;
 const CANVAS_TOKEN = creds.token;
 
-let activeCanvasClient: CanvasClient | null = CANVAS_TOKEN
-  ? new CanvasClient({ baseUrl: CANVAS_URL, token: CANVAS_TOKEN })
+let activeCanvasClient: CanvasClient | null = (creds.token || creds.sessionCookie)
+  ? new CanvasClient({
+      baseUrl: creds.url,
+      token: creds.token,
+      sessionCookie: creds.sessionCookie,
+      csrfToken: creds.csrfToken,
+    })
   : null;
 
 export function setCanvasClient(client: CanvasClient) {

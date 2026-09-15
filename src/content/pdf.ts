@@ -58,20 +58,24 @@ export async function extractPdfTextFromBuffer(
 }
 
 /**
- * Descarga un archivo PDF desde una URL con autorización Bearer (solo si es dominio Canvas) y extrae su texto.
+ * Descarga un archivo PDF desde una URL con autorización Bearer o cabeceras de sesión (solo si es dominio Canvas) y extrae su texto.
  */
 export async function downloadAndExtractPdf(
   url: string,
-  token?: string,
+  tokenOrHeaders?: string | Record<string, string>,
   maxPages?: number,
   canvasBaseUrl?: string
 ): Promise<PdfExtractResult> {
   const headers: Record<string, string> = {
     "User-Agent": USER_AGENT,
   };
-  const shouldAuth = canvasBaseUrl ? isCanvasUrl(url, canvasBaseUrl) : Boolean(token);
-  if (token && shouldAuth) {
-    headers["Authorization"] = `Bearer ${token}`;
+  const shouldAuth = canvasBaseUrl ? isCanvasUrl(url, canvasBaseUrl) : Boolean(tokenOrHeaders);
+  if (tokenOrHeaders && shouldAuth) {
+    if (typeof tokenOrHeaders === "string") {
+      headers["Authorization"] = `Bearer ${tokenOrHeaders}`;
+    } else {
+      Object.assign(headers, tokenOrHeaders);
+    }
   }
 
   const response = await fetch(url, { headers });

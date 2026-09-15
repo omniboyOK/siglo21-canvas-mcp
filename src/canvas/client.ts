@@ -14,16 +14,22 @@ import { downloadAndExtractPdf, isCanvasUrl } from "../content/pdf.js";
 
 export interface CanvasClientConfig {
   baseUrl: string;
-  token: string;
+  token?: string;
+  sessionCookie?: string;
+  csrfToken?: string;
 }
 
 export class CanvasClient {
   private baseUrl: string;
-  private token: string;
+  private token?: string;
+  private sessionCookie?: string;
+  private csrfToken?: string;
 
   constructor(config: CanvasClientConfig) {
     this.baseUrl = config.baseUrl.trim().replace(/\/+$/, "");
-    this.token = config.token.trim();
+    this.token = config.token?.trim();
+    this.sessionCookie = config.sessionCookie?.trim();
+    this.csrfToken = config.csrfToken?.trim();
   }
 
   public getBaseUrl(): string {
@@ -31,25 +37,47 @@ export class CanvasClient {
   }
 
   public getAuthHeaders(): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.token}`,
+    const headers: Record<string, string> = {
       "User-Agent": USER_AGENT,
     };
+
+    if (this.token) {
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
+
+    if (this.sessionCookie) {
+      let cookieStr = this.sessionCookie;
+      if (!cookieStr.includes("=")) {
+        cookieStr = `canvas_session=${cookieStr}`;
+      }
+      if (this.csrfToken && !cookieStr.includes("_csrf_token=")) {
+        cookieStr += `; _csrf_token=${this.csrfToken}`;
+      }
+      headers["Cookie"] = cookieStr;
+    }
+
+    if (this.csrfToken) {
+      headers["X-CSRF-Token"] = this.csrfToken;
+    }
+
+    return headers;
   }
 
   /**
    * Descarga y procesa un PDF asegurando que solo se adjunten credenciales a dominios oficiales de Canvas.
    */
   public async downloadPdf(url: string, maxPages?: number) {
-    const token = isCanvasUrl(url, this.baseUrl) ? this.token : undefined;
-    return downloadAndExtractPdf(url, token, maxPages, this.baseUrl);
+    const authHeaders = isCanvasUrl(url, this.baseUrl)
+      ? this.getAuthHeaders()
+      : undefined;
+    return downloadAndExtractPdf(url, authHeaders, maxPages, this.baseUrl);
   }
 
   /**
    * @deprecated Utilizar downloadPdf() o getAuthHeaders() para evitar exposición innecesaria del token en memoria.
    */
   public getRawToken(): string {
-    return this.token;
+    return this.token || "";
   }
 
   /**
@@ -62,12 +90,13 @@ export class CanvasClient {
       ? endpointOrUrl
       : `${this.baseUrl}/api/v1/${endpointOrUrl.replace(/^\/+/, "")}`;
 
+    const headers: Record<string, string> = {
+      ...this.getAuthHeaders(),
+      Accept: "application/json",
+    };
+
     const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Accept: "application/json",
-        "User-Agent": USER_AGENT,
-      },
+      headers,
     });
 
     if (!res.ok) {

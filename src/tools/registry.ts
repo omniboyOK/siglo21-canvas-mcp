@@ -72,16 +72,17 @@ const ALL_TOOLS: ToolDefinition[] = [
  */
 export function createMcpServer(): Server {
   // Resolver credenciales y crear client
-  const { url, token } = resolveCanvasCredentials();
+  const { url, token, sessionCookie, csrfToken } = resolveCanvasCredentials();
+  const hasAuth = Boolean(token || sessionCookie);
 
-  if (!token) {
+  if (!hasAuth) {
     console.error(
-      "⚠️ Advertencia: CANVAS_TOKEN no está definido en las variables de entorno ni en mcp_config.json."
+      "⚠️ Advertencia: Ni CANVAS_TOKEN ni CANVAS_SESSION están definidos en las variables de entorno ni en mcp_config.json."
     );
   }
 
-  const client = new CanvasClient({ baseUrl: url, token });
-  const hasToken = Boolean(token);
+  const client = new CanvasClient({ baseUrl: url, token, sessionCookie, csrfToken });
+  const hasToken = hasAuth;
 
   // Crear servidor MCP
   const server = new Server(
@@ -116,7 +117,7 @@ export function createMcpServer(): Server {
     // Verificar autenticación si el tool la requiere
     if (tool.requiresAuth !== false && !hasToken) {
       return errorResponse(
-        "ERROR: La variable de entorno CANVAS_TOKEN no está configurada. Por favor define CANVAS_TOKEN con tu token de Canvas LMS."
+        "ERROR: Ni CANVAS_TOKEN ni CANVAS_SESSION están configurados. Por favor define CANVAS_TOKEN o CANVAS_SESSION en mcp_config.json."
       );
     }
 
