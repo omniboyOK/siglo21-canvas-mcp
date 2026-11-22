@@ -10,6 +10,9 @@ on:
       - master
       - development
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Build & Test
