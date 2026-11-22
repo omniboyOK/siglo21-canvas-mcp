@@ -1,20 +1,59 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { URL } from "node:url";
 
-// Base de datos en memoria para los tests
-process.env.S21_DB_PATH = ":memory:";
-
-import { handleApiRequest } from "./apiRouter.js";
 import { ExamRepository } from "../db/examRepository.js";
 import { getDb } from "../db/database.js";
+
+const ISOLATED_ENV_KEYS = [
+  "CANVAS_TOKEN",
+  "CANVAS_SESSION",
+  "CANVAS_COOKIE",
+  "CANVAS_CSRF_TOKEN",
+  "CANVAS_URL",
+  "S21_DB_PATH",
+  "S21_COURSES_DIR",
+  "S21_DISABLE_CONFIG_FALLBACK",
+  "NODE_ENV",
+] as const;
 
 describe("Micro-Router REST API (/api/*)", () => {
   let server: http.Server;
   let baseUrl: string;
+  let tempCoursesDir: string;
+  let handleApiRequest: typeof import("./apiRouter.js").handleApiRequest;
+  const savedEnv = new Map<string, string | undefined>();
 
   before(async () => {
+    for (const key of ISOLATED_ENV_KEYS) {
+      savedEnv.set(key, process.env[key]);
+    }
+    for (const key of [
+      "CANVAS_TOKEN",
+      "CANVAS_SESSION",
+      "CANVAS_COOKIE",
+      "CANVAS_CSRF_TOKEN",
+      "CANVAS_URL",
+    ]) {
+      delete process.env[key];
+    }
+
+    tempCoursesDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "s21-api-test-courses-")
+    );
+    process.env.S21_DB_PATH = ":memory:";
+    process.env.S21_COURSES_DIR = tempCoursesDir;
+    process.env.S21_DISABLE_CONFIG_FALLBACK = "1";
+    process.env.NODE_ENV = "test";
+
+    const apiRouter = await import("./apiRouter.js");
+    handleApiRequest = apiRouter.handleApiRequest;
+    apiRouter.setCanvasClient(null);
+
     // Inicializar base de datos en memoria
     getDb();
 
@@ -44,6 +83,17 @@ describe("Micro-Router REST API (/api/*)", () => {
 
   after(() => {
     server.close();
+    for (const key of ISOLATED_ENV_KEYS) {
+      const value = savedEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    if (tempCoursesDir && fs.existsSync(tempCoursesDir)) {
+      fs.rmSync(tempCoursesDir, { recursive: true, force: true });
+    }
   });
 
   it("GET /api/tools debe retornar el catálogo de herramientas con ok: true", async () => {
@@ -136,12 +186,11 @@ describe("Micro-Router REST API (/api/*)", () => {
     assert.match(json.error, /dominio oficial de Canvas/);
   });
 
-  it("GET /api/canvas/courses/12345/modules debe responder con respuesta estructurada JSON", async () => {
-
+  it("GET /api/canvas/courses/12345/modules debe responder 503 sin credenciales configuradas", async () => {
     const res = await fetch(`${baseUrl}/api/canvas/courses/12345/modules`);
-    assert.ok([200, 500, 503].includes(res.status));
+    assert.strictEqual(res.status, 503);
     const json = (await res.json()) as any;
-    assert.ok(typeof json.ok === "boolean");
+    assert.strictEqual(json.ok, false);
   });
 
   it("POST /api/storage/open-folder debe validar course_id obligatorio", async () => {
@@ -156,7 +205,7 @@ describe("Micro-Router REST API (/api/*)", () => {
     assert.match(json.error, /course_id es requerido/);
   });
 
-  it("GET /api/canvas/courses/9999/readings-catalog debe devolver ranuras enriquecidas", async () => {
+  it("GET /api/canvas/courses/9999/readings-catalog debe devolver ranuras enriquecidas usando el directorio temporal", async () => {
     const res = await fetch(`${baseUrl}/api/canvas/courses/9999/readings-catalog`);
     assert.strictEqual(res.status, 200);
     const json = (await res.json()) as any;
@@ -165,6 +214,7 @@ describe("Micro-Router REST API (/api/*)", () => {
     assert.strictEqual(json.data.length, 16);
     assert.ok("has_local_pdf" in json.data[0]);
     assert.ok("has_local_md" in json.data[0]);
+    const tempEntries = fs.readdirSync(tempCoursesDir);
+    assert.ok(tempEntries.some((entry) => entry.startsWith("9999 - ")));
   });
 });
-
