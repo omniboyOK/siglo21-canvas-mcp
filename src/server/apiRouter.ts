@@ -39,7 +39,7 @@ let activeCanvasClient: CanvasClient | null = (creds.token || creds.sessionCooki
     })
   : null;
 
-export function setCanvasClient(client: CanvasClient) {
+export function setCanvasClient(client: CanvasClient | null) {
   activeCanvasClient = client;
 }
 

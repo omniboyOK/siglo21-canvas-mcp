@@ -1,9 +1,49 @@
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createMcpServer } from "./registry.js";
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
+const ISOLATED_ENV_KEYS = [
+  "CANVAS_TOKEN",
+  "CANVAS_SESSION",
+  "CANVAS_COOKIE",
+  "CANVAS_CSRF_TOKEN",
+  "CANVAS_URL",
+  "S21_DISABLE_CONFIG_FALLBACK",
+  "NODE_ENV",
+] as const;
+
 describe("MCP Tools Registry & Handlers", () => {
+  const savedEnv = new Map<string, string | undefined>();
+
+  before(() => {
+    for (const key of ISOLATED_ENV_KEYS) {
+      savedEnv.set(key, process.env[key]);
+    }
+    for (const key of [
+      "CANVAS_TOKEN",
+      "CANVAS_SESSION",
+      "CANVAS_COOKIE",
+      "CANVAS_CSRF_TOKEN",
+      "CANVAS_URL",
+    ]) {
+      delete process.env[key];
+    }
+    process.env.S21_DISABLE_CONFIG_FALLBACK = "1";
+    process.env.NODE_ENV = "test";
+  });
+
+  after(() => {
+    for (const key of ISOLATED_ENV_KEYS) {
+      const value = savedEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
   it("createMcpServer debe instanciar el servidor MCP con 22 herramientas registradas", async () => {
     const server = createMcpServer();
     assert.ok(server);

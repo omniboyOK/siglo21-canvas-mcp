@@ -17,21 +17,38 @@ export interface CanvasCredentials {
   csrfToken?: string;
 }
 
-export function resolveCanvasCredentials(): CanvasCredentials {
-  let url = (
-    process.env.CANVAS_URL || "https://siglo21.instructure.com"
-  ).replace(/\/+$/, "");
-  let token = process.env.CANVAS_TOKEN || "";
-  let sessionCookie =
-    process.env.CANVAS_SESSION || process.env.CANVAS_COOKIE || "";
-  let csrfToken = process.env.CANVAS_CSRF_TOKEN || "";
+export interface ResolveCanvasCredentialsOptions {
+  env?: NodeJS.ProcessEnv;
+  homeDir?: string;
+  disableConfigFileFallback?: boolean;
+}
 
-  if (!token && !sessionCookie) {
+export function resolveCanvasCredentials(
+  options: ResolveCanvasCredentialsOptions = {}
+): CanvasCredentials {
+  const env = options.env ?? process.env;
+  let url = (
+    env.CANVAS_URL || "https://siglo21.instructure.com"
+  ).replace(/\/+$/, "");
+  let token = env.CANVAS_TOKEN || "";
+  let sessionCookie =
+    env.CANVAS_SESSION || env.CANVAS_COOKIE || "";
+  let csrfToken = env.CANVAS_CSRF_TOKEN || "";
+
+  const envDisablesFallback =
+    env.S21_DISABLE_CONFIG_FALLBACK === "1" ||
+    env.S21_DISABLE_CONFIG_FALLBACK === "true" ||
+    (env.NODE_ENV === "test" && options.homeDir === undefined);
+  const disableFallback =
+    options.disableConfigFileFallback ?? envDisablesFallback;
+
+  if (!token && !sessionCookie && !disableFallback) {
+    const baseHome = options.homeDir ?? os.homedir();
     const candidatePaths = [
-      path.join(os.homedir(), ".gemini", "config", "mcp_config.json"),
-      path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json"),
+      path.join(baseHome, ".gemini", "config", "mcp_config.json"),
+      path.join(baseHome, ".gemini", "antigravity", "mcp_config.json"),
       path.join(
-        os.homedir(),
+        baseHome,
         ".gemini",
         "antigravity-ide",
         "mcp_config.json"
