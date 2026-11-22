@@ -5,6 +5,9 @@
 
 import pdfParse from "pdf-parse";
 import { USER_AGENT } from "../config/constants.js";
+import { isCanvasUrl, safeFetch } from "../config/httpSecurity.js";
+
+export { isCanvasUrl };
 
 export interface PdfExtractResult {
   numPages: number;
@@ -12,20 +15,6 @@ export interface PdfExtractResult {
   text: string;
   charCount: number;
   buffer?: Buffer;
-}
-
-/**
- * Valida que una URL pertenezca al dominio configurado de Canvas LMS
- */
-export function isCanvasUrl(url: string, canvasBaseUrl: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const canvasHost = new URL(canvasBaseUrl).hostname.toLowerCase();
-    const targetHost = parsed.hostname.toLowerCase();
-    return targetHost === canvasHost || targetHost.endsWith(".instructure.com");
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -78,7 +67,10 @@ export async function downloadAndExtractPdf(
     }
   }
 
-  const response = await fetch(url, { headers });
+  const response = await safeFetch(url, {
+    headers,
+    authBaseUrl: canvasBaseUrl,
+  });
   if (!response.ok) {
     throw new Error(`Fallo al descargar PDF (HTTP ${response.status}): ${response.statusText}`);
   }

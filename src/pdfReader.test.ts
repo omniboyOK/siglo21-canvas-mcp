@@ -38,4 +38,21 @@ describe("Validación de seguridad de URLs (isCanvasUrl)", () => {
     assert.strictEqual(isCanvasUrl("not-a-url", canvasBase), false);
     assert.strictEqual(isCanvasUrl("", canvasBase), false);
   });
+
+  it("debe rechazar HTTP inseguro, esquemas no HTTP y credenciales embebidas", () => {
+    assert.strictEqual(
+      isCanvasUrl("http://siglo21.instructure.com/files/123/download", canvasBase),
+      false
+    );
+    assert.strictEqual(
+      isCanvasUrl("http://canvas.instructure.com/doc.pdf", canvasBase),
+      false
+    );
+    assert.strictEqual(isCanvasUrl("file:///etc/passwd", canvasBase), false);
+    assert.strictEqual(isCanvasUrl("javascript:alert(1)", canvasBase), false);
+    assert.strictEqual(
+      isCanvasUrl("https://siglo21.instructure.com@evil.com/doc.pdf", canvasBase),
+      false
+    );
+  });
 });

@@ -24,6 +24,36 @@ export interface StartSimulatorOptions {
 
 let activePortalServer: http.Server | null = null;
 
+/**
+ * Valida orígenes permitidos para el portal local (rechaza null, file://, 0.0.0.0 y orígenes remotos).
+ */
+export function isAllowedPortalOrigin(origin: string): boolean {
+  if (!origin || origin === "null") {
+    return false;
+  }
+  try {
+    const originUrl = new URL(origin);
+    if (
+      originUrl.protocol === "vscode-webview:" ||
+      originUrl.protocol === "app:"
+    ) {
+      return true;
+    }
+    if (originUrl.protocol === "http:" || originUrl.protocol === "https:") {
+      const host = originUrl.hostname.toLowerCase();
+      return (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "[::1]" ||
+        host === "::1"
+      );
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function startExamSimulatorServer(
   port = 42122,
   autoOpen = true,
@@ -46,50 +76,36 @@ export async function startExamSimulatorServer(
   }
 
   const qs = queryParams.toString();
-  const targetUrl = qs ? `http://localhost:${port}/?${qs}` : `http://localhost:${port}`;
+  const buildTargetUrl = (boundPort: number) =>
+    qs ? `http://localhost:${boundPort}/?${qs}` : `http://localhost:${boundPort}`;
 
   // Si ya hay un servidor activo en este proceso, reutilizarlo
   if (activePortalServer && activePortalServer.listening) {
+    const addr = activePortalServer.address();
+    const activePort =
+      typeof addr === "object" && addr ? addr.port : port;
+    const activeUrl = buildTargetUrl(activePort);
     if (autoOpen) {
-      openAppWindow(targetUrl);
+      openAppWindow(activeUrl);
     }
-    return { port, url: targetUrl, server: activePortalServer };
+    return { port: activePort, url: activeUrl, server: activePortalServer };
   }
 
   const server = http.createServer(async (req, res) => {
     try {
-      // CORS restrictivo: permitir localhost, 127.0.0.1, ::1 y origen null/local (Edge app mode / Webview)
+      res.setHeader("X-Content-Type-Options", "nosniff");
+
+      // CORS restrictivo: solo orígenes locales explícitos (localhost, 127.0.0.1, [::1], webview/app)
       const origin = req.headers.origin;
       if (origin) {
-        let isAllowed = false;
-        if (
-          origin === "null" ||
-          origin.startsWith("vscode-webview://") ||
-          origin.startsWith("app://") ||
-          origin.startsWith("file://")
-        ) {
-          isAllowed = true;
-        } else {
-          try {
-            const originUrl = new URL(origin);
-            const host = originUrl.hostname.toLowerCase();
-            isAllowed =
-              host === "localhost" ||
-              host === "127.0.0.1" ||
-              host === "::1" ||
-              host === "0.0.0.0";
-          } catch {
-            isAllowed = false;
-          }
-        }
-
-        if (!isAllowed) {
+        if (!isAllowedPortalOrigin(origin)) {
           res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
           res.end(JSON.stringify({ ok: false, error: "Origen no permitido" }));
           return;
         }
 
         res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Vary", "Origin");
         res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
         res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
       }
@@ -153,6 +169,12 @@ export async function startExamSimulatorServer(
 
 
   return new Promise((resolve, reject) => {
+    server.on("close", () => {
+      if (activePortalServer === server) {
+        activePortalServer = null;
+      }
+    });
+
     server.on("error", (err: any) => {
       if (err.code === "EADDRINUSE") {
         console.error(`[S21 Portal] El puerto ${port} está ocupado. Intentando en puerto alternativo ${port + 1}...`);
@@ -162,15 +184,18 @@ export async function startExamSimulatorServer(
       }
     });
 
-    server.listen(port, () => {
+    server.listen(port, "127.0.0.1", () => {
       activePortalServer = server;
-      console.error(`[S21 Portal] Servidor escuchando en ${targetUrl}`);
+      const addr = server.address();
+      const boundPort = typeof addr === "object" && addr ? addr.port : port;
+      const actualUrl = buildTargetUrl(boundPort);
+      console.error(`[S21 Portal] Servidor escuchando en ${actualUrl}`);
 
       if (autoOpen) {
-        openAppWindow(targetUrl);
+        openAppWindow(actualUrl);
       }
 
-      resolve({ port, url: targetUrl, server });
+      resolve({ port: boundPort, url: actualUrl, server });
     });
   });
 }
