@@ -7,7 +7,7 @@
 import { z } from "zod";
 
 export const CourseIdSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
 });
 
 export const ListCoursesSchema = z.object({
@@ -17,18 +17,18 @@ export const ListCoursesSchema = z.object({
 });
 
 export const AcademicStatusSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
   target_promo_grade: z.coerce.number().optional(),
   target_regular_grade: z.coerce.number().optional(),
 });
 
 export const AssignmentsSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
   clean_content: z.boolean().optional(),
 });
 
 export const ModulesSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
   clean_content: z.boolean().optional(),
 });
 
@@ -39,29 +39,29 @@ export const ReadPdfSchema = z.object({
 });
 
 export const GetReadingSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
-  module_number: z.coerce.number({ required_error: "module_number es requerido" }),
-  reading_number: z.coerce.number({ required_error: "reading_number es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
+  module_number: z.coerce.number({ error: "module_number es requerido" }),
+  reading_number: z.coerce.number({ error: "reading_number es requerido" }),
   auto_read_pdf: z.boolean().optional(),
 });
 
 export const GetReadingPdfSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
-  module_number: z.coerce.number({ required_error: "module_number es requerido" }),
-  reading_number: z.coerce.number({ required_error: "reading_number es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
+  module_number: z.coerce.number({ error: "module_number es requerido" }),
+  reading_number: z.coerce.number({ error: "reading_number es requerido" }),
   output_dir: z.string().optional(),
 });
 
 export const GenerateQuizSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
-  module_number: z.coerce.number({ required_error: "module_number es requerido" }),
-  reading_number: z.coerce.number({ required_error: "reading_number es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
+  module_number: z.coerce.number({ error: "module_number es requerido" }),
+  reading_number: z.coerce.number({ error: "reading_number es requerido" }),
   question_count: z.coerce.number().optional(),
 });
 
 export const AuditRubricSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
-  assignment_id: z.coerce.number({ required_error: "assignment_id es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
+  assignment_id: z.coerce.number({ error: "assignment_id es requerido" }),
   draft_text: z.string().min(1, "draft_text es requerido"),
 });
 
@@ -87,7 +87,7 @@ export const ExamSimulatorSchema = z.object({
 });
 
 export const SaveQuestionsSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
   course_name: z.string().min(1, "course_name es requerido"),
   questions: z
     .array(
@@ -106,7 +106,7 @@ export const SaveQuestionsSchema = z.object({
 });
 
 export const BankQuestionsSchema = z.object({
-  course_id: z.coerce.number({ required_error: "course_id es requerido" }),
+  course_id: z.coerce.number({ error: "course_id es requerido" }),
   module_number: z.coerce.number().optional(),
   limit: z.coerce.number().optional(),
 });
