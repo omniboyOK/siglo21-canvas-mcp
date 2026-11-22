@@ -219,6 +219,8 @@ export async function safeFetch(
       return response;
     }
 
+    await response.body?.cancel().catch(() => {});
+
     if (redirects >= maxRedirects) {
       throw new Error(`Demasiadas redirecciones HTTP (máximo ${maxRedirects})`);
     }

@@ -139,16 +139,28 @@ describe("Seguridad HTTP y anti-SSRF (safeFetch + CanvasClient)", () => {
 
       globalThis.fetch = ((_input: any, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => {
-            reject(init.signal?.reason || new Error("Aborted"));
-          });
+          const fallbackTimer = setTimeout(() => {
+            reject(new Error("AbortSignal.timeout did not abort in time"));
+          }, 5000);
+          const onAbort = () => {
+            clearTimeout(fallbackTimer);
+            reject(init?.signal?.reason || new Error("Aborted"));
+          };
+          if (init?.signal?.aborted) {
+            onAbort();
+            return;
+          }
+          init?.signal?.addEventListener("abort", onAbort, { once: true });
         })) as typeof fetch;
 
-      await assert.rejects(() =>
-        safeFetch("https://siglo21.instructure.com/slow", {
-          authBaseUrl: "https://siglo21.instructure.com",
-          timeoutMs: 30,
-        })
+      await assert.rejects(
+        () =>
+          safeFetch("https://siglo21.instructure.com/slow", {
+            authBaseUrl: "https://siglo21.instructure.com",
+            timeoutMs: 30,
+          }),
+        (err: any) =>
+          err?.name === "TimeoutError" || /aborted due to timeout/i.test(String(err))
       );
     } finally {
       globalThis.fetch = originalFetch;
