@@ -10,7 +10,8 @@
  */
 
 import { USER_AGENT } from "../config/constants.js";
-import { downloadAndExtractPdf, isCanvasUrl } from "../content/pdf.js";
+import { isCanvasUrl, safeFetch } from "../config/httpSecurity.js";
+import { downloadAndExtractPdf } from "../content/pdf.js";
 
 export interface CanvasClientConfig {
   baseUrl: string;
@@ -90,13 +91,19 @@ export class CanvasClient {
       ? endpointOrUrl
       : `${this.baseUrl}/api/v1/${endpointOrUrl.replace(/^\/+/, "")}`;
 
+    if (!isCanvasUrl(url, this.baseUrl)) {
+      throw new Error("URL fuera del dominio oficial de Canvas");
+    }
+
     const headers: Record<string, string> = {
       ...this.getAuthHeaders(),
       Accept: "application/json",
     };
 
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers,
+      authBaseUrl: this.baseUrl,
+      requireCanvasHostOnAllHops: true,
     });
 
     if (!res.ok) {
@@ -119,7 +126,7 @@ export class CanvasClient {
       for (const l of links) {
         if (l.includes('rel="next"')) {
           const match = l.match(/<([^>]+)>/);
-          if (match) {
+          if (match && isCanvasUrl(match[1], this.baseUrl)) {
             nextUrl = match[1];
           }
         }

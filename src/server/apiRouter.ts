@@ -21,7 +21,8 @@ import {
 } from "../canvas/content.service.js";
 import { getUnifiedUpcomingEvents } from "../canvas/events.service.js";
 import { getStudentDashboard } from "../canvas/dashboard.service.js";
-import { downloadAndExtractPdf, isCanvasUrl } from "../content/pdf.js";
+import { downloadAndExtractPdf } from "../content/pdf.js";
+import { isCanvasUrl, safeFetch } from "../config/httpSecurity.js";
 import * as storageManager from "../storage/manager.js";
 import { ExamRepository } from "../db/examRepository.js";
 import { TOOLS_CATALOG } from "../tools/catalog.js";
@@ -491,7 +492,10 @@ export async function handleApiRequest(
         Object.assign(headers, activeCanvasClient.getAuthHeaders());
       }
 
-      const response = await fetch(targetUrl, { headers });
+      const response = await safeFetch(targetUrl, {
+        headers,
+        authBaseUrl: canvasBase,
+      });
       if (!response.ok) {
         res.writeHead(response.status);
         res.end(JSON.stringify({ ok: false, error: `Fallo al descargar archivo: ${response.statusText}` }));

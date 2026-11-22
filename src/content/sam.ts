@@ -4,6 +4,16 @@
  */
 
 import { cleanHtmlToMarkdown } from "./html.js";
+import { isLoopbackHost, safeFetch } from "../config/httpSecurity.js";
+
+function isLoopbackHttpUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "http:" && isLoopbackHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
 
 export interface SamReadingItem {
   moduleNumber: number;
@@ -187,11 +197,12 @@ export async function fetchAndParseSamReading(rawUrl: string): Promise<SamReadin
     return cached.content;
   }
 
-  const res = await fetch(cleanUrl, {
+  const res = await safeFetch(cleanUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
+    allowLoopbackHttp: isLoopbackHttpUrl(cleanUrl),
   });
 
   if (!res.ok) {
@@ -326,12 +337,14 @@ export function getSamBaseUrl(url: string): string {
 export async function fetchSamReadingPdf(rawUrl: string): Promise<SamPdfResult> {
   const cleanUrl = rawUrl.split("#")[0].trim();
   const baseUrl = getSamBaseUrl(cleanUrl);
+  const allowLoopbackHttp = isLoopbackHttpUrl(cleanUrl);
 
-  const res = await fetch(cleanUrl, {
+  const res = await safeFetch(cleanUrl, {
     headers: {
       "User-Agent": BROWSER_USER_AGENT,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
+    allowLoopbackHttp,
   });
 
   if (!res.ok) {
@@ -365,11 +378,12 @@ export async function fetchSamReadingPdf(rawUrl: string): Promise<SamPdfResult> 
   // Si no se encontró en HTML, intentar en locales/en.js
   if (!courseObj) {
     try {
-      const enRes = await fetch(`${baseUrl}/locales/en.js`, {
+      const enRes = await safeFetch(`${baseUrl}/locales/en.js`, {
         headers: {
           "User-Agent": BROWSER_USER_AGENT,
           Accept: "*/*",
         },
+        allowLoopbackHttp,
       });
       if (enRes.ok) {
         const enText = await enRes.text();
@@ -447,12 +461,13 @@ export async function fetchSamReadingPdf(rawUrl: string): Promise<SamPdfResult> 
 
         for (const assetUrl of assetUrls) {
           try {
-            const pdfRes = await fetch(assetUrl, {
+            const pdfRes = await safeFetch(assetUrl, {
               headers: {
                 "User-Agent": BROWSER_USER_AGENT,
                 Accept: "application/pdf,*/*",
                 Referer: cleanUrl,
               },
+              allowLoopbackHttp,
             });
 
             if (pdfRes.ok) {
@@ -499,12 +514,13 @@ export async function fetchSamReadingPdf(rawUrl: string): Promise<SamPdfResult> 
     }
 
     try {
-      const pdfRes = await fetch(downloadUrl, {
+      const pdfRes = await safeFetch(downloadUrl, {
         headers: {
           "User-Agent": BROWSER_USER_AGENT,
           Accept: "application/pdf,*/*",
           Referer: cleanUrl,
         },
+        allowLoopbackHttp,
       });
 
       if (pdfRes.ok) {

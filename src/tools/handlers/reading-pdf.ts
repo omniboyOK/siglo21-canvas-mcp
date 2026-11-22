@@ -4,7 +4,7 @@ import { GetReadingPdfSchema } from "../schemas.js";
 import { findReading, getFileInfo } from "../../canvas/content.service.js";
 import { getCourse } from "../../canvas/courses.service.js";
 import { fetchSamReadingPdf } from "../../content/sam.js";
-import { isCanvasUrl } from "../../content/pdf.js";
+import { isCanvasUrl, safeFetch } from "../../config/httpSecurity.js";
 import { USER_AGENT } from "../../config/constants.js";
 import * as storageManager from "../../storageManager.js";
 import path from "node:path";
@@ -109,7 +109,10 @@ export const readingPdfTool: ToolDefinition = {
           ? ctx.client.getAuthHeaders()
           : { "User-Agent": USER_AGENT };
 
-        const res = await fetch(downloadUrl, { headers: authHeaders });
+        const res = await safeFetch(downloadUrl, {
+          headers: authHeaders,
+          authBaseUrl: ctx.client.getBaseUrl(),
+        });
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         }
