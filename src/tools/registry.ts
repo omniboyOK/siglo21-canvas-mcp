@@ -70,6 +70,13 @@ const ALL_TOOLS: ToolDefinition[] = [
 ];
 
 /**
+ * Devuelve la lista de identificadores de todas las herramientas MCP registradas.
+ */
+export function getRegisteredToolNames(): string[] {
+  return ALL_TOOLS.map((t) => t.name);
+}
+
+/**
  * Crea y configura el servidor MCP con todas las herramientas registradas.
  */
 export function createMcpServer(): Server {

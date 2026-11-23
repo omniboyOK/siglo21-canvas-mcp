@@ -21,7 +21,7 @@ import {
 } from "../canvas/content.service.js";
 import { getUnifiedUpcomingEvents } from "../canvas/events.service.js";
 import { getStudentDashboard } from "../canvas/dashboard.service.js";
-import { downloadAndExtractPdf } from "../content/pdf.js";
+import { extractPdfTextFromBuffer } from "../content/pdf.js";
 import { isCanvasUrl, safeFetch } from "../config/httpSecurity.js";
 import * as storageManager from "../storage/manager.js";
 import { ExamRepository } from "../db/examRepository.js";
@@ -29,7 +29,6 @@ import { TOOLS_CATALOG } from "../tools/catalog.js";
 
 const creds = resolveCanvasCredentials();
 const CANVAS_URL = creds.url;
-const CANVAS_TOKEN = creds.token;
 
 let activeCanvasClient: CanvasClient | null = (creds.token || creds.sessionCookie)
   ? new CanvasClient({
@@ -220,32 +219,69 @@ export async function handleApiRequest(
       // 1. Verificar si ya existe guardada en disco localmente (Offline-First)
       const localReading = storageManager.getReading(courseId, moduleNum, readingNum);
       if (localReading) {
-        const pdfFilename = localReading.pdfPath ? path.basename(localReading.pdfPath) : "";
-        const downloadUrl = pdfFilename
-          ? `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}`
-          : "";
-        const inlineUrl = pdfFilename
-          ? `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}&inline=true`
-          : "";
+        let localText = localReading.markdown;
+        let localMdPath = localReading.mdPath;
+        let localNumPages = 0;
 
-        res.writeHead(200);
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            title: localReading.title,
-            text: localReading.markdown,
-            num_pages: 0,
-            download_url: downloadUrl,
-            inline_url: inlineUrl,
-            online_url: "",
-            source: "local",
-            local: true,
-            has_pdf: localReading.hasPdf,
-            pdf_path: localReading.pdfPath,
-            md_path: localReading.mdPath,
-          },
-        }));
-        return true;
+        if (
+          !localText.trim() &&
+          localReading.pdfPath &&
+          fs.existsSync(localReading.pdfPath)
+        ) {
+          try {
+            const extracted = await extractPdfTextFromBuffer(
+              fs.readFileSync(localReading.pdfPath),
+              30
+            );
+            if (extracted.text.trim()) {
+              localText = extracted.text;
+              localNumPages = extracted.numPages;
+              try {
+                const saved = storageManager.saveReading(
+                  courseId,
+                  moduleNum,
+                  readingNum,
+                  localReading.title,
+                  extracted.text
+                );
+                localMdPath = saved.mdPath;
+              } catch {
+                // Ignorar error secundario al guardar Markdown derivado
+              }
+            }
+          } catch {
+            // Si el PDF local no puede parsearse, continuar hacia el flujo online
+          }
+        }
+
+        if (localText.trim()) {
+          const pdfFilename = localReading.pdfPath ? path.basename(localReading.pdfPath) : "";
+          const downloadUrl = pdfFilename
+            ? `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}`
+            : "";
+          const inlineUrl = pdfFilename
+            ? `/api/canvas/proxy-download?course_id=${courseId}&filename=${encodeURIComponent(pdfFilename)}&inline=true`
+            : "";
+
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            ok: true,
+            data: {
+              title: localReading.title,
+              text: localText,
+              num_pages: localNumPages,
+              download_url: downloadUrl,
+              inline_url: inlineUrl,
+              online_url: "",
+              source: "local",
+              local: true,
+              has_pdf: localReading.hasPdf,
+              pdf_path: localReading.pdfPath,
+              md_path: localMdPath,
+            },
+          }));
+          return true;
+        }
       }
 
       // Si no está en disco local, requerimos Canvas Client para consultar online

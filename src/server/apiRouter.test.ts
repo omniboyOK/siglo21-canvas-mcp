@@ -205,16 +205,79 @@ describe("Micro-Router REST API (/api/*)", () => {
     assert.match(json.error, /course_id es requerido/);
   });
 
-  it("GET /api/canvas/courses/9999/readings-catalog debe devolver ranuras enriquecidas usando el directorio temporal", async () => {
-    const res = await fetch(`${baseUrl}/api/canvas/courses/9999/readings-catalog`);
+  function buildMinimalPdf(text: string): Buffer {
+    const safe = text.replace(/[()\\]/g, "\\$&");
+    const stream = `BT /F1 12 Tf 72 720 Td (${safe}) Tj ET`;
+    const objs = [
+      "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+      "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+      `4 0 obj\n<< /Length ${Buffer.byteLength(stream, "ascii")} >>\nstream\n${stream}\nendstream\nendobj\n`,
+      "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+    ];
+    let out = "%PDF-1.4\n";
+    const offsets: number[] = [];
+    for (const obj of objs) {
+      offsets.push(Buffer.byteLength(out, "ascii"));
+      out += obj;
+    }
+    const xrefStart = Buffer.byteLength(out, "ascii");
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+    for (const off of offsets) {
+      out += `${String(off).padStart(10, "0")} 00000 n \n`;
+    }
+    out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
+    return Buffer.from(out, "ascii");
+  }
+
+  it("GET /api/canvas/courses/9999/readings-catalog no debe crear carpetas vacías al consultar y debe detectar PDFs existentes", async () => {
+    const resEmpty = await fetch(`${baseUrl}/api/canvas/courses/9999/readings-catalog`);
+    assert.strictEqual(resEmpty.status, 200);
+    const jsonEmpty = (await resEmpty.json()) as any;
+    assert.strictEqual(jsonEmpty.ok, true);
+    assert.ok(Array.isArray(jsonEmpty.data));
+    assert.strictEqual(jsonEmpty.data.length, 16);
+    assert.strictEqual(jsonEmpty.data[0].has_local_pdf, false);
+    assert.strictEqual(jsonEmpty.data[0].has_local_md, false);
+    assert.strictEqual(fs.readdirSync(tempCoursesDir).length, 0);
+
+    const courseDir = path.join(tempCoursesDir, "9999 - Materia Test");
+    fs.mkdirSync(courseDir, { recursive: true });
+    fs.writeFileSync(path.join(courseDir, "M1_L1_Intro.pdf"), "%PDF-1.4 test");
+
+    const resWithPdf = await fetch(`${baseUrl}/api/canvas/courses/9999/readings-catalog`);
+    assert.strictEqual(resWithPdf.status, 200);
+    const jsonWithPdf = (await resWithPdf.json()) as any;
+    assert.strictEqual(jsonWithPdf.data[0].has_local_pdf, true);
+    assert.strictEqual(jsonWithPdf.data[0].has_local_md, false);
+  });
+
+  it("GET /api/canvas/courses/:id/reading-text debe extraer texto de lectura solo-PDF y persistir Markdown", async () => {
+    const courseDir = path.join(tempCoursesDir, "9998 - Materia Solo PDF");
+    fs.mkdirSync(courseDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(courseDir, "M1_L2_Arquitectura_HTTP.pdf"),
+      buildMinimalPdf("Hola Siglo 21 PDF Local")
+    );
+
+    const res = await fetch(`${baseUrl}/api/canvas/courses/9998/reading-text?module=1&reading=2`);
     assert.strictEqual(res.status, 200);
     const json = (await res.json()) as any;
     assert.strictEqual(json.ok, true);
-    assert.ok(Array.isArray(json.data));
-    assert.strictEqual(json.data.length, 16);
-    assert.ok("has_local_pdf" in json.data[0]);
-    assert.ok("has_local_md" in json.data[0]);
-    const tempEntries = fs.readdirSync(tempCoursesDir);
-    assert.ok(tempEntries.some((entry) => entry.startsWith("9999 - ")));
+    assert.strictEqual(json.data.source, "local");
+    assert.strictEqual(json.data.local, true);
+    assert.match(json.data.text, /Hola Siglo 21 PDF Local/);
+    assert.ok(json.data.md_path && fs.existsSync(json.data.md_path));
+  });
+
+  it("GET /api/canvas/courses/:id/reading-text con solo-PDF corrupto debe pasar al flujo online (503 sin cliente)", async () => {
+    const courseDir = path.join(tempCoursesDir, "9997 - Materia PDF Roto");
+    fs.mkdirSync(courseDir, { recursive: true });
+    fs.writeFileSync(path.join(courseDir, "M2_L1_Archivo_Roto.pdf"), "%PDF-1.4 roto");
+
+    const res = await fetch(`${baseUrl}/api/canvas/courses/9997/reading-text?module=2&reading=1`);
+    assert.strictEqual(res.status, 503);
+    const json = (await res.json()) as any;
+    assert.strictEqual(json.ok, false);
   });
 });

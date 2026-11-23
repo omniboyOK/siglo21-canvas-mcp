@@ -1,11 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { TOOLS_CATALOG } from "./toolsCatalog.js";
+import { getRegisteredToolNames } from "./tools/registry.js";
 
 describe("Catálogo de Herramientas MCP", () => {
-  it("debe contener una lista de herramientas registradas", () => {
+  it("debe contener una lista de herramientas registradas con paridad exacta frente al registry MCP", () => {
     assert.ok(Array.isArray(TOOLS_CATALOG));
-    assert.ok(TOOLS_CATALOG.length >= 10, "Debe haber al menos 10 herramientas en el catálogo");
+    const registered = getRegisteredToolNames();
+    const catalogIds = TOOLS_CATALOG.map((t) => t.id);
+    const missingInCatalog = registered.filter((id) => !catalogIds.includes(id));
+    const extraInCatalog = catalogIds.filter((id) => !registered.includes(id));
+
+    assert.deepStrictEqual(missingInCatalog, []);
+    assert.deepStrictEqual(extraInCatalog, []);
+    assert.strictEqual(catalogIds.length, registered.length);
   });
 
   it("cada herramienta debe tener un identificador único con prefijo s21_", () => {

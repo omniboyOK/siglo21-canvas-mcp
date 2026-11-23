@@ -4,6 +4,8 @@
  */
 export {
   getCoursesRootDir,
+  findExistingCourseDir,
+  isPathWithinCoursesRoot,
   sanitizeFileName,
   getCourseDir,
   getReadingBaseName,

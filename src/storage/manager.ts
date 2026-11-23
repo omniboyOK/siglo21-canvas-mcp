@@ -30,12 +30,39 @@ function resolveDefaultCoursesDir(): string {
 
 const DEFAULT_COURSES_DIR = resolveDefaultCoursesDir();
 
+function resolveExistingCoursesRootDir(): string | null {
+  const root = process.env.S21_COURSES_DIR || DEFAULT_COURSES_DIR;
+  return fs.existsSync(root) ? root : null;
+}
+
 export function getCoursesRootDir(): string {
   const root = process.env.S21_COURSES_DIR || DEFAULT_COURSES_DIR;
   if (!fs.existsSync(root)) {
     fs.mkdirSync(root, { recursive: true });
   }
   return root;
+}
+
+/**
+ * Busca la carpeta existente de una materia sin crearla en disco si no existe.
+ */
+export function findExistingCourseDir(courseId: number): string | null {
+  const root = resolveExistingCoursesRootDir();
+  if (!root) return null;
+
+  try {
+    const existingDirs = fs.readdirSync(root, { withFileTypes: true });
+    for (const ent of existingDirs) {
+      if (ent.isDirectory()) {
+        const match = ent.name.match(/^(\d+)(?:\s*-\s*|$)/);
+        if (match && Number(match[1]) === courseId) {
+          return path.join(root, ent.name);
+        }
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 /**
@@ -54,20 +81,12 @@ export function sanitizeFileName(name: string): string {
  * Si ya existe una carpeta que comienza con "${courseId} -", la reutiliza.
  */
 export function getCourseDir(courseId: number, courseName?: string): string {
-  const root = getCoursesRootDir();
+  const existing = findExistingCourseDir(courseId);
+  if (existing) {
+    return existing;
+  }
 
-  // Buscar si ya existe una carpeta para este ID
-  try {
-    const existingDirs = fs.readdirSync(root, { withFileTypes: true });
-    for (const ent of existingDirs) {
-      if (ent.isDirectory()) {
-        const match = ent.name.match(/^(\d+)(?:\s*-\s*|$)/);
-        if (match && Number(match[1]) === courseId) {
-          return path.join(root, ent.name);
-        }
-      }
-    }
-  } catch {}
+  const root = getCoursesRootDir();
 
   // Si no existe, crear con nombre limpio
   const cleanName = courseName ? sanitizeFileName(courseName) : `Materia_${courseId}`;
@@ -121,8 +140,8 @@ export function findLocalReadingFiles(
   moduleNum: number,
   readingNum: number
 ): LocalReadingFiles | null {
-  const courseDir = getCourseDir(courseId);
-  if (!fs.existsSync(courseDir)) return null;
+  const courseDir = findExistingCourseDir(courseId);
+  if (!courseDir) return null;
 
   try {
     const files = fs.readdirSync(courseDir);
@@ -205,18 +224,44 @@ export function getReading(
 }
 
 /**
+ * Valida que una ruta existente resida realmente dentro del directorio raíz de materias (sin colisiones de prefijo ni symlinks externos).
+ */
+export function isPathWithinCoursesRoot(targetPath: string): {
+  allowed: boolean;
+  resolvedPath?: string;
+} {
+  if (!targetPath) return { allowed: false };
+  const rootDir = resolveExistingCoursesRootDir();
+  if (!rootDir || !fs.existsSync(targetPath)) {
+    return { allowed: false };
+  }
+
+  try {
+    const realRoot = fs.realpathSync(rootDir);
+    const realTarget = fs.realpathSync(targetPath);
+    const relative = path.relative(realRoot, realTarget);
+    const allowed =
+      relative === "" ||
+      (!relative.startsWith("..") && !path.isAbsolute(relative));
+    return allowed ? { allowed: true, resolvedPath: realTarget } : { allowed: false };
+  } catch {
+    return { allowed: false };
+  }
+}
+
+/**
  * Abre un archivo o carpeta en el visor por defecto del sistema operativo (Windows/macOS/Linux).
  */
 export function openPathInSystem(targetPath: string): boolean {
-  if (!fs.existsSync(targetPath)) return false;
-
-  // Verificar que la ruta no intente escapar fuera del árbol permitido
-  const resolved = path.resolve(targetPath);
-  const rootDir = path.resolve(getCoursesRootDir());
-  if (!resolved.startsWith(rootDir)) {
-    console.warn("[StorageManager] Intento de acceso a ruta no permitida:", targetPath);
+  const check = isPathWithinCoursesRoot(targetPath);
+  if (!check.allowed || !check.resolvedPath) {
+    if (targetPath && fs.existsSync(targetPath)) {
+      console.warn("[StorageManager] Intento de acceso a ruta no permitida:", targetPath);
+    }
     return false;
   }
+
+  const resolved = check.resolvedPath;
 
   const platform = process.platform;
   if (platform === "win32") {
@@ -337,8 +382,8 @@ export function findLocalCourseFile(
   courseId: number,
   filename: string
 ): string | null {
-  const courseDir = getCourseDir(courseId);
-  if (!fs.existsSync(courseDir)) return null;
+  const courseDir = findExistingCourseDir(courseId);
+  if (!courseDir) return null;
 
   const cleanName = sanitizeFileName(filename).toLowerCase();
   try {
@@ -356,7 +401,8 @@ export function findLocalCourseFile(
  * Busca si existe un archivo PDF en cualquier carpeta de materia que coincida con el nombre.
  */
 export function findAnyLocalFile(filename: string): string | null {
-  const root = getCoursesRootDir();
+  const root = resolveExistingCoursesRootDir();
+  if (!root) return null;
   const cleanName = sanitizeFileName(filename).toLowerCase();
 
   try {
