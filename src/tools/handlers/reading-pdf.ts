@@ -10,6 +10,19 @@ import * as storageManager from "../../storageManager.js";
 import path from "node:path";
 import fs from "node:fs";
 
+function isSamHostUrl(url?: string): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return (
+      hostname === "meca.ues21.edu.ar" ||
+      hostname.endsWith(".meca.ues21.edu.ar")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const readingPdfTool: ToolDefinition = {
   name: "s21_get_reading_pdf",
   description:
@@ -62,7 +75,7 @@ export const readingPdfTool: ToolDefinition = {
 
     // 2. Descargar según el origen del recurso
     // Caso A: Lectura interactiva SAM (meca.ues21.edu.ar / Articulate Rise 360 o HTML)
-    if (readingInfo.type === "SAM" || readingInfo.url?.includes("meca.ues21.edu.ar")) {
+    if (readingInfo.type === "SAM" || isSamHostUrl(readingInfo.url)) {
       originType = "Lectura SAM (meca.ues21.edu.ar)";
       try {
         const samResult = await fetchSamReadingPdf(readingInfo.url!);

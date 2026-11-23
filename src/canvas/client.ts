@@ -109,10 +109,16 @@ export class CanvasClient {
     if (!res.ok) {
       let errText = "";
       try {
-        const errorJson = await res.json();
-        errText = JSON.stringify(errorJson);
+        const rawText = (await res.text()).trim();
+        if (rawText) {
+          try {
+            errText = JSON.stringify(JSON.parse(rawText));
+          } catch {
+            errText = rawText;
+          }
+        }
       } catch {
-        errText = await res.text();
+        errText = "";
       }
       throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
     }
