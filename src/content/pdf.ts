@@ -29,7 +29,7 @@ export async function extractPdfTextFromBuffer(
     options.max = maxPages;
   }
 
-  const data = await pdfParse(buffer, options);
+  const data = await pdfParse(new Uint8Array(buffer) as unknown as Buffer, options);
 
   // Limpiar espacios en blanco excesivos pero conservar saltos de párrafo
   const cleanText = data.text

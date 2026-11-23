@@ -72,6 +72,17 @@ export const TOOLS_CATALOG: ToolStudentDoc[] = [
     parametersHint: "course_id, course_name, questions",
   },
   {
+    id: "s21_get_exam_bank_summary",
+    name: "Resumen del Banco de Preguntas e Historial",
+    category: "examenes",
+    categoryLabel: "Exámenes y Práctica",
+    tagColor: "teal",
+    summary: "Muestra el estado general del banco de preguntas en SQLite local: materias registradas, cantidad de preguntas por módulo, historial de simulacros y promedios.",
+    benefit: "Controla tu progreso acumulado antes de rendir un nuevo simulacro o parcial.",
+    examplePrompt: "Mostrame el resumen del banco de preguntas e historial de mis simulacros.",
+    parametersHint: "No requiere parámetros",
+  },
+  {
     id: "s21_generate_practice_quiz",
     name: "Generador Rápido de Quizzes",
     category: "examenes",

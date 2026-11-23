@@ -1,8 +1,10 @@
+import fs from "node:fs";
 import type { ToolDefinition } from "../_base.js";
 import { textResponse } from "../_base.js";
 import { GetReadingSchema } from "../schemas.js";
 import { findReading, getFileInfo } from "../../canvas/content.service.js";
 import { getCourse } from "../../canvas/courses.service.js";
+import { extractPdfTextFromBuffer } from "../../content/pdf.js";
 import * as storageManager from "../../storageManager.js";
 
 export const readingTool: ToolDefinition = {
@@ -27,10 +29,39 @@ export const readingTool: ToolDefinition = {
 
     // 1. Revisar si ya existe en almacenamiento local (Offline-First)
     const local = storageManager.getReading(courseId, moduleNumber, readingNumber);
-    if (local) {
+    if (local && local.markdown.trim()) {
       return textResponse(
         `=== Lectura Guardada en Disco (Offline-First) ===\nMateria ID: ${courseId}\nMódulo: ${moduleNumber}\nLectura: ${readingNumber}\nTítulo: ${local.title}\nArchivo MD: ${local.mdPath}${local.pdfPath ? `\nArchivo PDF: ${local.pdfPath}` : ""}\n\n${local.markdown}`
       );
+    }
+
+    if (local && autoReadPdf && local.pdfPath && fs.existsSync(local.pdfPath)) {
+      try {
+        const extracted = await extractPdfTextFromBuffer(
+          fs.readFileSync(local.pdfPath),
+          30
+        );
+        if (extracted.text.trim()) {
+          let mdPath = local.mdPath;
+          try {
+            const saved = storageManager.saveReading(
+              courseId,
+              moduleNumber,
+              readingNumber,
+              local.title,
+              extracted.text
+            );
+            mdPath = saved.mdPath;
+          } catch {
+            // Ignorar error de persistencia secundaria de Markdown derivado
+          }
+          return textResponse(
+            `=== Lectura Guardada en Disco (Offline-First) ===\nMateria ID: ${courseId}\nMódulo: ${moduleNumber}\nLectura: ${readingNumber}\nTítulo: ${local.title}\nArchivo MD: ${mdPath}\nArchivo PDF: ${local.pdfPath}\n\n${extracted.text}`
+          );
+        }
+      } catch {
+        // Si falla el parseo del PDF local, continuar al flujo online
+      }
     }
 
     const readingInfo = await findReading(ctx.client, courseId, moduleNumber, readingNumber);

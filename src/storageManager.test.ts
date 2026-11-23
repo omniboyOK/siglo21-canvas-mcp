@@ -11,7 +11,10 @@ import {
   getReading,
   saveCourseFile,
   findLocalCourseFile,
+  findLocalReadingFiles,
   findAnyLocalFile,
+  isPathWithinCoursesRoot,
+  openPathInSystem,
 } from "./storageManager.js";
 
 describe("storageManager - Almacenamiento local por materia", () => {
@@ -123,5 +126,46 @@ describe("storageManager - Almacenamiento local por materia", () => {
     assert.ok(reading);
     assert.strictEqual(reading?.hasPdf, true);
     assert.strictEqual(reading?.title, "Protocolos TCP IP");
+  });
+
+  it("búsquedas de solo lectura sobre cursos inexistentes no deben crear carpetas vacías", () => {
+    const missingCourseId = 66666;
+    assert.strictEqual(hasReading(missingCourseId, 1, 1), false);
+    assert.strictEqual(findLocalReadingFiles(missingCourseId, 1, 1), null);
+    assert.strictEqual(findLocalCourseFile(missingCourseId, "archivo.pdf"), null);
+    assert.strictEqual(getReading(missingCourseId, 1, 1), null);
+
+    const dirs = fs.readdirSync(tempRootDir);
+    assert.strictEqual(dirs.some((d) => d.startsWith("66666")), false);
+  });
+
+  it("isPathWithinCoursesRoot y openPathInSystem deben bloquear colisión de prefijo y symlinks externos", () => {
+    const insideFile = saveCourseFile(55555, "guia.txt", Buffer.from("ok"), "Materia Segura");
+    const insideCheck = isPathWithinCoursesRoot(insideFile);
+    assert.strictEqual(insideCheck.allowed, true);
+    assert.ok(insideCheck.resolvedPath);
+
+    const siblingDir = `${tempRootDir}-evil`;
+    const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), "s21-outside-target-"));
+    try {
+      fs.mkdirSync(siblingDir, { recursive: true });
+      const siblingFile = path.join(siblingDir, "secret.pdf");
+      fs.writeFileSync(siblingFile, "forbidden");
+
+      assert.strictEqual(isPathWithinCoursesRoot(siblingFile).allowed, false);
+      assert.strictEqual(openPathInSystem(siblingFile), false);
+
+      const outsideFile = path.join(externalDir, "outside.txt");
+      fs.writeFileSync(outsideFile, "outside");
+      const courseDir = getCourseDir(55555);
+      const symlinkPath = path.join(courseDir, "escape-link.txt");
+      fs.symlinkSync(outsideFile, symlinkPath);
+
+      assert.strictEqual(isPathWithinCoursesRoot(symlinkPath).allowed, false);
+      assert.strictEqual(openPathInSystem(symlinkPath), false);
+    } finally {
+      fs.rmSync(siblingDir, { recursive: true, force: true });
+      fs.rmSync(externalDir, { recursive: true, force: true });
+    }
   });
 });
